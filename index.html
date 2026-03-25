@@ -987,6 +987,10 @@
             <select id="folder-select">
                 <option value="">--No Folders Available--</option>
             </select>
+            <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; margin-bottom: 12px; font-weight: normal;" title="Exclude this folder from breaker panel">
+                <input type="checkbox" id="exclude-from-panel-checkbox">
+                Exclude from Panel
+            </label>
             <label for="amps-input">Current (Amps):</label>
             <input type="number" id="amps-input" placeholder="e.g., 15" step="0.1" readonly>
             <label for="circuit-type">Circuit Type:</label>
@@ -1108,6 +1112,7 @@
         const gridCanvas = document.getElementById('grid-canvas'); 
         const gridCtx = gridCanvas.getContext('2d');
         const folderSelect = document.getElementById('folder-select');
+        const excludeFromPanelCheckbox = document.getElementById('exclude-from-panel-checkbox');
         const symbolToolbar = document.getElementById('symbol-toolbar');
         const symbolMoveModeBtn = document.getElementById('symbol-move-mode-btn');
         const symbolDeleteModeBtn = document.getElementById('symbol-delete-mode-btn');
@@ -1452,6 +1457,20 @@
 
         document.getElementById('circuit-type').addEventListener('change', calculateWireGauge);
         folderSelect.addEventListener('change', updateCalculatorFromFolderSelection);
+        excludeFromPanelCheckbox.addEventListener('change', () => {
+            if (folderSelect.selectedIndex < 0 || folderSelect.value === "") return;
+            
+            const selectedFolderName = folderSelect.options[folderSelect.selectedIndex].dataset.folderName;
+            const selectedFolder = findItemByName(selectedFolderName);
+            
+            if (selectedFolder) {
+                selectedFolder.excludeFromPanel = excludeFromPanelCheckbox.checked;
+                checkPanelCapacityAndWarn();
+                if (breakerPanelConfig) {
+                    renderBreakerPanel();
+                }
+            }
+        });
         document.querySelectorAll('input[name="voltage-type"]').forEach(radio => {
             radio.addEventListener('change', () => {
                 calculateWireGauge();
@@ -1891,8 +1910,8 @@
             acBreakerPanel.innerHTML = '<h3>120V AC Breakers</h3>';
 
             const allFolders = getFolderTotals(items);
-            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12);
-            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120);
+            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12 && !f.excludeFromPanel);
+            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120 && !f.excludeFromPanel);
 
             for (let i = 0; i < breakerPanelConfig.dcSlots; i++) {
                 const slot = document.createElement('div');
@@ -1930,8 +1949,8 @@
             }
             
             const allFolders = getFolderTotals(items);
-            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12);
-            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120);
+            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12 && !f.excludeFromPanel);
+            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120 && !f.excludeFromPanel);
 
             let warnings = [];
             if (dcFolders.length > breakerPanelConfig.dcSlots) {
@@ -2026,6 +2045,7 @@
         }
 
         function attachCanvasEvents(layer) {
+            layer.drawingCanvas.addEventListener('contextmenu', (e) => e.preventDefault());
             layer.drawingCanvas.addEventListener('mousedown', (e) => handleMouseDown(e, layer));
             layer.drawingCanvas.addEventListener('mousemove', (e) => {
                 handleMouseMove(e, layer);
@@ -2381,22 +2401,14 @@
                 return;
             }
             
-            if (e.button !== 1 && (mode === 'draw' || mode === 'select' || mode === 'measure' || mode === 'guideline')) {
-                 saveState(layer);
+            // Only allow left mouse button for drawing/interacting. Right- and middle-click are disabled.
+            if (e.button !== 0) {
+                e.preventDefault();
+                return;
             }
 
-            if (e.button === 1) {
-                e.preventDefault();
+            if (mode === 'draw' || mode === 'select' || mode === 'measure' || mode === 'guideline') {
                 saveState(layer);
-                const xPath = {
-                    points: [{x: canvasX - currentSize * 2, y: canvasY - currentSize * 2},{x: canvasX + currentSize * 2, y: canvasY + currentSize * 2},{x: canvasX + currentSize * 2, y: canvasY - currentSize * 2},{x: canvasX - currentSize * 2, y: canvasY + currentSize * 2}],
-                    color: 'black',
-                    lineWidth: currentSize,
-                    isX: true
-                };
-                layer.paths.push(xPath);
-                redrawLayer(layer);
-                return;
             }
             
             if (mode === 'draw') {
@@ -3297,13 +3309,36 @@
                 
                 folderTotalsData.forEach(folder => {
                     const voltage = (folder.wireGaugeData && folder.wireGaugeData.voltage) ? folder.wireGaugeData.voltage : 12;
-                    const totalWatts = folder.watts + (folder.amps * voltage);
-                    const totalAmps = totalWatts / voltage;
+                    let totalWatts = folder.watts + (folder.amps * voltage);
+                    let totalAmps = totalWatts / voltage;
+                    
+                    // Add loads from other folders if any are attached
+                    const folderItem = findItemByName(folder.name);
+                    if (folderItem && folderItem.addedLoadFolders && folderItem.addedLoadFolders.length > 0) {
+                        let addedWatts = 0;
+                        folderItem.addedLoadFolders.forEach(addedFolderName => {
+                            const addedFolder = findItemByName(addedFolderName);
+                            if (addedFolder) {
+                                const addedTotals = getItemTotals(addedFolder);
+                                addedWatts += addedTotals.watts + (addedTotals.amps * voltage);
+                            }
+                        });
+                        totalWatts += addedWatts;
+                        totalAmps = totalWatts / voltage;
+                    }
+                    
                     const li = document.createElement('li');
-                    li.innerHTML = `<strong>${folder.name}</strong><br>
-                                    Calculation Total (Red): ${folder.redTotal.toFixed(2)} ft<br>
-                                    Total Wire Run (All): ${folder.combinedTotal.toFixed(2)} ft<br>
-                                    Total Load: ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)`;
+                    let html = `<strong>${folder.name}</strong><br>
+                                Calculation Total (Red): ${folder.redTotal.toFixed(2)} ft<br>
+                                Total Wire Run (All): ${folder.combinedTotal.toFixed(2)} ft<br>
+                                Total Load: ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)`;
+                    
+                    // Show added loads if any
+                    if (folderItem && folderItem.addedLoadFolders && folderItem.addedLoadFolders.length > 0) {
+                        html += `<br><span style="font-size: 12px; color: #666; margin-top: 4px; display: block;">Added loads: ${folderItem.addedLoadFolders.join(', ')}</span>`;
+                    }
+                    
+                    li.innerHTML = html;
                     folderList.appendChild(li);
                 });
                 folderTotalsDiv.appendChild(folderHeader);
@@ -3470,8 +3505,19 @@
                 
                 // Fallback for 12V DC or 120V AC without outlets
                 const folderTotals = getItemTotals(currentFolder);
-                const totalWatts = folderTotals.watts;
-                const totalAmpsFromSymbols = folderTotals.amps;
+                let totalWatts = folderTotals.watts;
+                let totalAmpsFromSymbols = folderTotals.amps;
+                
+                // Add loads from other folders
+                (currentFolder.addedLoadFolders || []).forEach(addedFolderName => {
+                    const addedFolder = findItemByName(addedFolderName);
+                    if (addedFolder) {
+                        const addedTotals = getItemTotals(addedFolder);
+                        totalWatts += addedTotals.watts;
+                        totalAmpsFromSymbols += addedTotals.amps;
+                    }
+                });
+                
                 const calculatedAmps = (totalWatts / systemVoltage) + totalAmpsFromSymbols;
 
                 if (calculatedAmps > 0) {
@@ -3493,6 +3539,8 @@
                 document.getElementById('voltage-dc').checked = true;
                 circuitTypeSelect.value = 'nonCritical';
                 resultDiv.textContent = '';
+                excludeFromPanelCheckbox.checked = false;
+                excludeFromPanelCheckbox.disabled = true;
                 updateAmpsDisplay();
                 populateAddLoadDropdown();
                 return;
@@ -3500,6 +3548,15 @@
 
             const folderName = folderSelect.options[folderSelect.selectedIndex].dataset.folderName;
             const folder = findItemByName(folderName);
+
+            // Update exclude checkbox state
+            if (folder) {
+                excludeFromPanelCheckbox.checked = folder.excludeFromPanel || false;
+                excludeFromPanelCheckbox.disabled = false;
+            } else {
+                excludeFromPanelCheckbox.checked = false;
+                excludeFromPanelCheckbox.disabled = true;
+            }
 
             if (folder && folder.wireGaugeData) {
                 circuitTypeSelect.value = folder.wireGaugeData.type;
@@ -3538,6 +3595,8 @@
                 mainFolder.addedLoadFolders = mainFolder.addedLoadFolders.filter(name => name !== folderToAddName);
             }
             
+            updateAmpsDisplay();
+            updateFolderTotalsDisplay();
             calculateWireGauge();
         }
 
