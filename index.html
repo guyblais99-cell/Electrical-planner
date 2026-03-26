@@ -969,6 +969,12 @@
                 <label for="extra-length-input">Extra Length (ft):</label>
                 <input type="number" id="extra-length-input" step="0.1">
             </div>
+            <div id="led-strip-container" style="display: none;">
+                <label for="led-strip-inches-input">Length (inches):</label>
+                <input type="number" id="led-strip-inches-input" step="0.1" placeholder="">
+                <label for="led-strip-watts-per-meter-input">Watts per Meter:</label>
+                <input type="number" id="led-strip-watts-per-meter-input" step="0.1" value="9.6">
+            </div>
             <div id="text-note-container" style="display: none;">
                 <label for="text-note-input">Note:</label>
                 <input type="text" id="text-note-input">
@@ -1141,6 +1147,9 @@
         const customApplianceNameInput = document.getElementById('custom-appliance-name-input');
         const extraLengthContainer = document.getElementById('extra-length-container');
         const extraLengthInput = document.getElementById('extra-length-input');
+        const ledStripContainer = document.getElementById('led-strip-container');
+        const ledStripInchesInput = document.getElementById('led-strip-inches-input');
+        const ledStripWattsPerMeterInput = document.getElementById('led-strip-watts-per-meter-input');
         const textNoteContainer = document.getElementById('text-note-container');
         const textNoteInput = document.getElementById('text-note-input');
         const projectTitleElement = document.getElementById('project-title');
@@ -1177,7 +1186,8 @@
             outlet: { rating: 15 },
             extraLength: { length: 5 },
             puckLight: { value: 3, unit: 'W' },
-            usb: { value: 10, unit: 'A' }
+            usb: { value: 10, unit: 'A' },
+            ledStrip: { inches: '', wattsPerMeter: 9.6 }
         };
         let placingSymbolData = null;
 
@@ -1574,6 +1584,16 @@
                         return;
                     }
                     
+                    if (symbolType === 'ledStrip') {
+                        showCustomModal({
+                            type: 'ledStripDefault',
+                            title: `Set LED Strip Parameters`,
+                            symbolType: symbolType,
+                            onSave: startPlacing
+                        });
+                        return;
+                    }
+                    
                     if (symbolDefaultValues[symbolType] === undefined) {
                         showCustomModal({
                             type: 'symbolDefault',
@@ -1619,6 +1639,14 @@
                     showCustomModal({
                         type: 'editExtraLength',
                         title: 'Edit Default Extra Length',
+                        onSave: startPlacingAfterEdit
+                    });
+                    return;
+                }
+                if(symbolType === 'ledStrip'){
+                    showCustomModal({
+                        type: 'ledStripDefault',
+                        title: 'Edit Default LED Strip Parameters',
                         onSave: startPlacingAfterEdit
                     });
                     return;
@@ -1865,6 +1893,9 @@
         });
 
         batchCreateBtn.addEventListener('click', async () => {
+            const selectedFolderIndex = items.findIndex(item => item.type === 'folder' && item.selected);
+            let insertIndex = selectedFolderIndex !== -1 ? selectedFolderIndex + 1 : items.length;
+
             for (const folderData of batchSetupData) {
                 const newFolder = {
                     type: 'folder',
@@ -1889,7 +1920,8 @@
                 for (const file of filesForFolder) {
                     await addLayer(file, newFolder.children);
                 }
-                items.push(newFolder);
+                items.splice(insertIndex, 0, newFolder);
+                insertIndex += 1;
             }
             
             batchSetupModal.style.display = 'none';
@@ -1987,7 +2019,7 @@
             currentPath = null;
             selectedPoint = null;
             globalScale = null;
-            symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' } };
+            symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
             currentMeasurement = null;
             breakerPanelConfig = null;
             gridCtx.clearRect(0, 0, WIDTH, HEIGHT);
@@ -2123,6 +2155,7 @@
             outletRatingContainer.style.display = 'none';
             customApplianceContainer.style.display = 'none';
             extraLengthContainer.style.display = 'none';
+            ledStripContainer.style.display = 'none';
             textNoteContainer.style.display = 'none';
             document.getElementById('info-message-container').style.display = 'none';
 
@@ -2292,6 +2325,34 @@
                 };
                 saveModalValueBtn.addEventListener('click', activeModalSaveHandler);
 
+            } else if (type === 'ledStripDefault' || type === 'editLedStrip') {
+                ledStripContainer.style.display = 'block';
+                const currentDefault = (symbol ? symbol : symbolDefaultValues.ledStrip) || { inches: '', wattsPerMeter: 9.6 };
+                ledStripInchesInput.value = (currentDefault.inches !== undefined && currentDefault.inches !== '') ? currentDefault.inches : '';
+                ledStripWattsPerMeterInput.value = (currentDefault.wattsPerMeter !== undefined) ? currentDefault.wattsPerMeter : 9.6;
+                focusElement = ledStripInchesInput;
+
+                activeModalSaveHandler = () => {
+                    const inches = parseFloat(ledStripInchesInput.value) || 0;
+                    const wattsPerMeter = parseFloat(ledStripWattsPerMeterInput.value) || 9.6;
+                    
+                    if (symbol) {
+                        symbol.inches = inches;
+                        symbol.wattsPerMeter = wattsPerMeter;
+                        redrawLayer(activeLayer);
+                        updateDataPanel();
+                    } else {
+                        symbolDefaultValues.ledStrip.inches = inches;
+                        symbolDefaultValues.ledStrip.wattsPerMeter = wattsPerMeter;
+                        updateSymbolDefaultLabels();
+                        if (onSave) onSave();
+                    }
+                    symbolEditModal.style.display = 'none';
+                    saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
+                    activeModalSaveHandler = null;
+                };
+                saveModalValueBtn.addEventListener('click', activeModalSaveHandler);
+
             } else if (type === 'textNote' || type === 'editTextNote') {
                 textNoteContainer.style.display = 'block';
                 textNoteInput.value = (symbol && symbol.text) ? symbol.text : '';
@@ -2361,16 +2422,23 @@
             
             if (placingSymbolType) {
                 saveState(layer);
-                const defaultVal = symbolDefaultValues[placingSymbolType] || { value: 0, unit: 'W' };
-                const newSymbol = {
+                let newSymbol = {
                     id: idCounter++,
                     type: placingSymbolType,
                     x: canvasX,
                     y: canvasY,
-                    value: defaultVal.value,
-                    unit: defaultVal.unit,
                     ...placingSymbolData
                 };
+                
+                if (placingSymbolType === 'ledStrip') {
+                    const defaultVal = symbolDefaultValues[placingSymbolType] || { inches: '', wattsPerMeter: 9.6 };
+                    newSymbol.inches = defaultVal.inches;
+                    newSymbol.wattsPerMeter = defaultVal.wattsPerMeter;
+                } else {
+                    const defaultVal = symbolDefaultValues[placingSymbolType] || { value: 0, unit: 'W' };
+                    newSymbol.value = defaultVal.value;
+                    newSymbol.unit = defaultVal.unit;
+                }
                 
                 layer.symbols.push(newSymbol);
                 redrawLayer(layer);
@@ -2732,7 +2800,16 @@
                     return;
                 }
                 
-                if (!['extraLength', 'textNote'].includes(selectedSymbol.type)) {
+                if (selectedSymbol.type === 'ledStrip') {
+                    showCustomModal({
+                        type: 'editLedStrip',
+                        title: 'Edit LED Strip',
+                        symbol: selectedSymbol
+                    });
+                    return;
+                }
+                
+                if (!['extraLength', 'textNote', 'ledStrip'].includes(selectedSymbol.type)) {
                     showCustomModal({type: 'symbolEdit', title: `Edit ${getSymbolFriendlyName(selectedSymbol.type)}`});
 
                     const rect = layer.drawingCanvas.getBoundingClientRect();
@@ -2877,6 +2954,10 @@
                     otherText = symbol.text;
                 } else if (symbol.type === 'outlet' && symbol.rating) {
                     powerText = `${symbol.rating}A`;
+                } else if (symbol.type === 'ledStrip' && symbol.inches !== undefined && symbol.wattsPerMeter !== undefined) {
+                    const meters = (symbol.inches || 0) / 39.3701;
+                    const watts = (meters * symbol.wattsPerMeter).toFixed(2);
+                    powerText = `${watts}W`;
                 } else if (symbol.value !== undefined && symbol.unit) {
                     powerText = `${symbol.value}${symbol.unit}`;
                 }
@@ -3194,6 +3275,12 @@
                             totalWatts += s.value || 0;
                         } else if (s.watts) { // Backwards compatibility
                             totalWatts += s.watts || 0;
+                        }
+                        
+                        if (s.type === 'ledStrip' && s.inches !== undefined && s.wattsPerMeter !== undefined) {
+                            const meters = (s.inches || 0) / 39.3701;
+                            const watts = meters * s.wattsPerMeter;
+                            totalWatts += watts;
                         }
 
                         if (s.type === 'extraLength' && s.length) {
@@ -3756,13 +3843,13 @@
                         projectName = loadedData.projectName || "Untitled Project";
                         updateProjectTitle();
                         projectItems = loadedData.projectItems;
-                        symbolDefaultValues = loadedData.symbolDefaults || { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' } };
+                        symbolDefaultValues = loadedData.symbolDefaults || { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
                         breakerPanelConfig = loadedData.breakerPanel || null;
                     } else {
                         projectName = "Untitled Project";
                         updateProjectTitle();
                         projectItems = loadedData; // Backwards compatibility
-                        symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' } };
+                        symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
                         breakerPanelConfig = null;
                     }
                     
@@ -4377,6 +4464,12 @@
                 } else if (symbolType === 'extraLength') {
                      if (defaultData && defaultData.length) {
                         label.textContent = `+${defaultData.length}ft`;
+                    } else {
+                        label.textContent = '--';
+                    }
+                } else if (symbolType === 'ledStrip') {
+                    if (defaultData && defaultData.wattsPerMeter) {
+                        label.textContent = `${defaultData.wattsPerMeter}W/m`;
                     } else {
                         label.textContent = '--';
                     }
