@@ -1383,6 +1383,12 @@
             mode = 'guideline';
             guidelineDeleteMode = false;
             guidelineToolState = {};
+            placingSymbolType = null;
+            moveSymbolMode = false;
+            deleteSymbolMode = false;
+            selectedSymbol = null;
+            workspace.classList.remove('placing-symbol-mode', 'move-symbols-mode', 'delete-symbols-mode');
+            updateSymbolToolbar();
             if (activeLayer && !activeLayer.guidelineOrigin) {
                 showCustomModal({
                     type: 'info',
@@ -1395,6 +1401,12 @@
         guidelineModeBtn.addEventListener('dblclick', () => {
             mode = 'guideline';
             guidelineDeleteMode = true;
+            placingSymbolType = null;
+            moveSymbolMode = false;
+            deleteSymbolMode = false;
+            selectedSymbol = null;
+            workspace.classList.remove('placing-symbol-mode', 'move-symbols-mode', 'delete-symbols-mode');
+            updateSymbolToolbar();
             updateButtonStates();
         });
 
@@ -2477,6 +2489,8 @@
                 layer.symbols.push(newSymbol);
                 redrawLayer(layer);
                 updateDataPanel();
+                // keep placingSymbolType active so same symbol can be placed repeatedly
+                updateSymbolToolbar();
                 return;
             }
 
