@@ -2420,6 +2420,40 @@
             canvasX = snapped.x;
             canvasY = snapped.y;
             
+            // Handle middle and right mouse buttons
+            if (e.button === 1) { // Middle mouse button
+                if (placingSymbolType) {
+                    e.preventDefault();
+                    return;
+                }
+                e.preventDefault();
+                return;
+            } else if (e.button === 2) { // Right mouse button
+                if (placingSymbolType) {
+                    placingSymbolType = null;
+                    mode = 'select';
+                    updateButtonStates();
+                    moveSymbolMode = true;
+                    updateSymbolToolbar();
+                    e.preventDefault();
+                    return;
+                } else if (mode === 'draw') {
+                    if (currentPath) {
+                        currentPath = null;
+                        layer.drawingPreview = null;
+                    }
+                    placingSymbolType = null;
+                    moveSymbolMode = false;
+                    deleteSymbolMode = false;
+                    mode = 'select';
+                    updateButtonStates();
+                    e.preventDefault();
+                    return;
+                }
+                e.preventDefault();
+                return;
+            }
+            
             if (placingSymbolType) {
                 saveState(layer);
                 let newSymbol = {
@@ -2469,12 +2503,6 @@
                 return;
             }
             
-            // Only allow left mouse button for drawing/interacting. Right- and middle-click are disabled.
-            if (e.button !== 0) {
-                e.preventDefault();
-                return;
-            }
-
             if (mode === 'draw' || mode === 'select' || mode === 'measure' || mode === 'guideline') {
                 saveState(layer);
             }
