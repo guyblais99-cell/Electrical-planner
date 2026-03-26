@@ -2443,6 +2443,11 @@
             } else if (e.button === 2) { // Right mouse button
                 if (placingSymbolType) {
                     placingSymbolType = null;
+                    placingSymbolData.start = null;
+                    if (layer.extraLengthPreview) {
+                        layer.extraLengthPreview = null;
+                        redrawLayer(layer);
+                    }
                     mode = 'select';
                     updateButtonStates();
                     moveSymbolMode = true;
@@ -2466,6 +2471,36 @@
                 return;
             }
             
+            if (placingSymbolType === 'extraLength') {
+                if (!placingSymbolData.start) {
+                    placingSymbolData.start = { x: canvasX, y: canvasY };
+                    layer.extraLengthPreview = { x1: canvasX, y1: canvasY, x2: canvasX, y2: canvasY };
+                    redrawLayer(layer);
+                    return;
+                }
+
+                // second click: place the extra wire label at the end point
+                saveState(layer);
+                const startPoint = placingSymbolData.start;
+                let newSymbol = {
+                    id: idCounter++,
+                    type: 'extraLength',
+                    x: canvasX,
+                    y: canvasY,
+                    x1: startPoint.x,
+                    y1: startPoint.y,
+                    length: placingSymbolData.length || symbolDefaultValues.extraLength?.length || 0
+                };
+
+                layer.symbols.push(newSymbol);
+                placingSymbolData.start = null;
+                layer.extraLengthPreview = null;
+                redrawLayer(layer);
+                updateDataPanel();
+                updateSymbolToolbar();
+                return;
+            }
+
             if (placingSymbolType) {
                 saveState(layer);
                 let newSymbol = {
@@ -2652,8 +2687,20 @@
             if (isDraggingSymbol && selectedSymbol) {
                 const {canvasX: rawX, canvasY: rawY} = getCanvasCoordinates(e);
                 const snapped = getSnappedCoordinates(rawX - symbolDragOffsetX, rawY - symbolDragOffsetY);
+                
+                // Calculate movement delta to update leader line start proportionally
+                const dx = snapped.x - selectedSymbol.x;
+                const dy = snapped.y - selectedSymbol.y;
+
                 selectedSymbol.x = snapped.x;
                 selectedSymbol.y = snapped.y;
+
+                // Move leader start point along with the symbol icon
+                if (selectedSymbol.type === 'extraLength' && selectedSymbol.x1 !== undefined) {
+                    selectedSymbol.x1 += dx;
+                    selectedSymbol.y1 += dy;
+                }
+
                 redrawLayer(layer);
                 return;
             }
@@ -2698,6 +2745,14 @@
                         currentMeasurement.preview.offset = canvasX - currentMeasurement.p1.x;
                     }
                 }
+                redrawLayer(layer);
+            } else if (placingSymbolType === 'extraLength' && placingSymbolData.start) {
+                layer.extraLengthPreview = {
+                    x1: placingSymbolData.start.x,
+                    y1: placingSymbolData.start.y,
+                    x2: canvasX,
+                    y2: canvasY
+                };
                 redrawLayer(layer);
             } else if (mode === 'guideline' && layer.guidelineOrigin && !guidelineDeleteMode) {
                 
@@ -2783,6 +2838,11 @@
             }
             if (layer.drawingPreview) {
                 layer.drawingPreview = null;
+                redrawLayer(layer);
+            }
+            if (layer.extraLengthPreview) {
+                layer.extraLengthPreview = null;
+                placingSymbolData.start = null;
                 redrawLayer(layer);
             }
             if (currentMeasurement && currentMeasurement.step === 1) {
@@ -2957,6 +3017,25 @@
             layer.symbols.forEach(symbol => {
                 const icon = svgIcons[symbol.type];
                 if (!icon) return;
+
+                // 1. Draw the Leader Line FIRST (Using absolute coordinates before translation)
+                if (symbol.type === 'extraLength' && symbol.x1 !== undefined && symbol.y1 !== undefined) {
+                    ctx.save();
+                    ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([6, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(symbol.x1, symbol.y1);
+                    ctx.lineTo(symbol.x, symbol.y);
+                    ctx.stroke();
+                    
+                    // Permanent start point anchor dot
+                    ctx.fillStyle = 'rgba(34, 197, 94, 0.8)';
+                    ctx.beginPath();
+                    ctx.arc(symbol.x1, symbol.y1, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.restore();
+                }
 
                 ctx.save();
                 ctx.translate(symbol.x, symbol.y);
@@ -3217,6 +3296,26 @@
             });
 
             drawSymbols(ctx, layer);
+
+            // extraLength leader preview while choosing end point
+            if (layer.extraLengthPreview) {
+                ctx.save();
+                ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
+                ctx.lineWidth = 2;
+                ctx.setLineDash([6, 4]);
+                ctx.beginPath();
+                ctx.moveTo(layer.extraLengthPreview.x1, layer.extraLengthPreview.y1);
+                ctx.lineTo(layer.extraLengthPreview.x2, layer.extraLengthPreview.y2);
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
+                ctx.beginPath();
+                ctx.arc(layer.extraLengthPreview.x1, layer.extraLengthPreview.y1, 4, 0, 2*Math.PI);
+                ctx.fill();
+                ctx.restore();
+            }
 
             if(showMeasurements && layer.measurements) {
                 layer.measurements.forEach(m => drawMeasurement(ctx, m));
