@@ -999,6 +999,7 @@
             </label>
             <label for="amps-input">Current (Amps):</label>
             <input type="number" id="amps-input" placeholder="e.g., 15" step="0.1" readonly>
+            <div id="amps-source-note" style="font-size: 12px; color: #666; margin-top: 4px; margin-bottom: 12px;"></div>
             <label for="circuit-type">Circuit Type:</label>
             <select id="circuit-type">
                 <option value="nonCritical">Non-Critical (10% Drop)</option>
@@ -3045,7 +3046,7 @@
                 let nameText = null;
                 let textYOffset = 0;
 
-                if (symbol.type !== 'textNote') {
+                if (symbol.type !== 'textNote' && symbol.type !== 'extraLength') {
                     const p = new Path2D(icon.path);
                     if (symbol === selectedSymbol && moveSymbolMode) {
                         ctx.strokeStyle = '#3b82f6';
@@ -3554,6 +3555,34 @@
                         totalWatts += addedWatts;
                         totalAmps = totalWatts / voltage;
                     }
+
+                    // Check if this folder is contributing its load to another folder
+                    let mainFolderForLoad = null;
+                    let mainFolderTotalAmps = null;
+                    function findMainFolder(name, checkList) {
+                        for (const item of checkList) {
+                            if (item.type === 'folder' && item.addedLoadFolders && item.addedLoadFolders.includes(name)) return item;
+                            if (item.type === 'folder') {
+                                const found = findMainFolder(name, item.children);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    }
+                    mainFolderForLoad = findMainFolder(folder.name, items);
+                    if (mainFolderForLoad) {
+                        const mf = getItemTotals(mainFolderForLoad);
+                        const mfVoltage = (mainFolderForLoad.wireGaugeData && mainFolderForLoad.wireGaugeData.voltage) ? mainFolderForLoad.wireGaugeData.voltage : voltage;
+                        let mfWatts = mf.watts + (mf.amps * mfVoltage);
+                        (mainFolderForLoad.addedLoadFolders || []).forEach(addedFolderName => {
+                            const af = findItemByName(addedFolderName);
+                            if (af) {
+                                const at = getItemTotals(af);
+                                mfWatts += at.watts + (at.amps * mfVoltage);
+                            }
+                        });
+                        mainFolderTotalAmps = mfWatts / mfVoltage;
+                    }
                     
                     const li = document.createElement('li');
                     let html = `<strong>${folder.name}</strong><br>
@@ -3565,6 +3594,11 @@
                     if (folderItem && folderItem.addedLoadFolders && folderItem.addedLoadFolders.length > 0) {
                         html += `<br><span style="font-size: 12px; color: #666; margin-top: 4px; display: block;">Added loads: ${folderItem.addedLoadFolders.join(', ')}</span>`;
                     }
+
+                    // Show note if this folder is adding its load to a main folder
+                    if (mainFolderForLoad) {
+                        html += `<br><span style="font-size: 12px; color: #2563eb; margin-top: 4px; display: block;">&#9432; Using load from <strong>${mainFolderForLoad.name}</strong>: ${mainFolderTotalAmps.toFixed(2)} A (combined total)</span>`;
+                    }
                     
                     li.innerHTML = html;
                     folderList.appendChild(li);
@@ -3574,7 +3608,7 @@
             }
         }
         
-        function getWireGaugeResultHTML(length, result) {
+        function getWireGaugeResultHTML(length, result, safetyFactor = 1.0, originalAmps = null, finalAmps = null) {
             if (result.includes('Exceeds')) {
                 return result;
             }
@@ -3633,20 +3667,60 @@
                 }
             });
             
+            // Check if this folder is adding its load to another folder
+            let parentFolderForLoad = null;
+            function findParentFolderWithAdded(currentFolderName, checkList = items) {
+                for (const item of checkList) {
+                    if (item.type === 'folder' && item.addedLoadFolders && item.addedLoadFolders.includes(currentFolderName)) {
+                        return item;
+                    }
+                    if (item.type === 'folder') {
+                        const found = findParentFolderWithAdded(currentFolderName, item.children);
+                        if (found) return found;
+                    }
+                }
+                return null;
+            }
+            parentFolderForLoad = findParentFolderWithAdded(folderName);
+            
+            // Calculate the amperage to use for wire gauge
+            let ampsForCalculation;
+            if (parentFolderForLoad) {
+                // This folder is adding load to another folder, use parent's total amps
+                const parentTotals = getItemTotals(parentFolderForLoad);
+                let parentAddedWatts = 0;
+                let parentAddedAmps = 0;
+                (parentFolderForLoad.addedLoadFolders || []).forEach(fName => {
+                    const f = findItemByName(fName);
+                    if (f) {
+                        const t = getItemTotals(f);
+                        parentAddedWatts += t.watts;
+                        parentAddedAmps += t.amps;
+                    }
+                });
+                const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
+                ampsForCalculation = (parentTotals.watts + parentAddedWatts) / systemVoltage + parentTotals.amps + parentAddedAmps;
+            } else {
+                // Use this folder's total amps (including any added loads)
+                const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
+                ampsForCalculation = (folderTotals.watts + addedWatts) / systemVoltage + folderTotals.amps + addedAmps;
+            }
+            
             const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
             const totalAddedWatts = addedWatts + (addedAmps * systemVoltage);
             updateAddLoadButtonText(totalAddedWatts);
 
             const totalWatts = folderTotals.watts + addedWatts;
             const totalAmps = folderTotals.amps + addedAmps;
-            let currentAmps = (totalWatts / systemVoltage) + totalAmps;
+            let currentAmps = ampsForCalculation;
             const circuitLengthFeet = parseFloat(selectedOption.value);
             const circuitType = circuitTypeSelect.value;
             resultDiv.style.display = 'block';
 
             // New 120V AC Heuristic Logic
             if (systemVoltage === 120) {
-                const allSymbols = getAllSymbolsInItem(mainFolder);
+                const folderToCheck = parentFolderForLoad || mainFolder;
+                const allSymbols = getAllSymbolsInItem(folderToCheck);
                 let maxOutletRating = 0;
                 allSymbols.forEach(s => {
                     if (s.type === 'outlet' && s.rating > maxOutletRating) {
@@ -3672,8 +3746,14 @@
             }
 
             // Original Voltage Drop Calculation (for 12V DC or 120V AC without rated outlets)
+            let originalAmps = currentAmps;
+            let safetyFactor = 1.0;
+            if (systemVoltage !== 120) {
+                safetyFactor = 1.20; // 1.20 safety de-rating factor for non-120V circuits
+                currentAmps *= safetyFactor;
+            }
             if (isNaN(circuitLengthFeet) || circuitLengthFeet < 0) { resultDiv.textContent = 'Please select a valid folder.'; return; }
-            if (isNaN(currentAmps) || currentAmps < 0) { 
+            if (isNaN(currentAmps) || currentAmps < 0) {
                  resultDiv.textContent = 'Invalid current.';
                  return;
             }
@@ -3690,11 +3770,13 @@
             const recommendedWire = awgData.find(wire => wire.cm >= circularMils);
             
             const resultValue = recommendedWire ? recommendedWire.awg + " AWG" : "Exceeds standard sizes";
-            resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, resultValue);
+            resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, resultValue, safetyFactor, originalAmps, currentAmps);
             
             if (mainFolder) {
                 mainFolder.wireGaugeData = {
                     amps: currentAmps,
+                    originalAmps: originalAmps,
+                    safetyFactor: safetyFactor,
                     type: circuitType,
                     length: circuitLengthFeet,
                     result: resultValue,
@@ -3706,8 +3788,10 @@
         
         function updateAmpsDisplay() {
             const ampsInput = document.getElementById('amps-input');
+            const ampsSourceNote = document.getElementById('amps-source-note');
             if (folderSelect.selectedIndex < 0 || folderSelect.value === "") {
                 ampsInput.value = '';
+                ampsSourceNote.textContent = '';
                 return;
             }
             
@@ -3717,8 +3801,25 @@
             if (currentFolder) {
                 const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
 
+                // Check if this folder is adding its load to another folder
+                let parentFolderForLoad = null;
+                function findParentFolderWithAdded(currentFolderName, checkList = items) {
+                    for (const item of checkList) {
+                        if (item.type === 'folder' && item.addedLoadFolders && item.addedLoadFolders.includes(currentFolderName)) {
+                            return item;
+                        }
+                        if (item.type === 'folder') {
+                            const found = findParentFolderWithAdded(currentFolderName, item.children);
+                            if (found) return found;
+                        }
+                    }
+                    return null;
+                }
+                parentFolderForLoad = findParentFolderWithAdded(folderName);
+
                 if (systemVoltage === 120) {
-                    const allSymbols = getAllSymbolsInItem(currentFolder);
+                    const folderToCheck = parentFolderForLoad || currentFolder;
+                    const allSymbols = getAllSymbolsInItem(folderToCheck);
                     const outlets = allSymbols.filter(s => s.type === 'outlet');
                     let maxOutletRating = 0;
                     if (outlets.length > 0) {
@@ -3727,34 +3828,44 @@
 
                     if (maxOutletRating > 0) {
                         ampsInput.value = maxOutletRating;
+                        if (parentFolderForLoad) {
+                            ampsSourceNote.textContent = `[Using ${parentFolderForLoad.name} load for wire gauge]`;
+                        } else {
+                            ampsSourceNote.textContent = '';
+                        }
                         return; // Exit here, as the rating is the deciding factor
                     }
                 }
                 
                 // Fallback for 12V DC or 120V AC without outlets
-                const folderTotals = getItemTotals(currentFolder);
-                let totalWatts = folderTotals.watts;
-                let totalAmpsFromSymbols = folderTotals.amps;
-                
-                // Add loads from other folders
+                // Always display this folder's own amps in the input box
+                const ownTotals = getItemTotals(currentFolder);
+                let ownWatts = ownTotals.watts;
+                let ownAmpsFromSymbols = ownTotals.amps;
                 (currentFolder.addedLoadFolders || []).forEach(addedFolderName => {
                     const addedFolder = findItemByName(addedFolderName);
                     if (addedFolder) {
                         const addedTotals = getItemTotals(addedFolder);
-                        totalWatts += addedTotals.watts;
-                        totalAmpsFromSymbols += addedTotals.amps;
+                        ownWatts += addedTotals.watts;
+                        ownAmpsFromSymbols += addedTotals.amps;
                     }
                 });
-                
-                const calculatedAmps = (totalWatts / systemVoltage) + totalAmpsFromSymbols;
+                const displayAmps = (ownWatts / systemVoltage) + ownAmpsFromSymbols;
 
-                if (calculatedAmps > 0) {
-                    ampsInput.value = calculatedAmps.toFixed(2);
+                if (displayAmps > 0) {
+                    ampsInput.value = displayAmps.toFixed(2);
                 } else {
                     ampsInput.value = '0';
                 }
+                
+                if (parentFolderForLoad) {
+                    ampsSourceNote.textContent = `[Using ${parentFolderForLoad.name} load for wire gauge]`;
+                } else {
+                    ampsSourceNote.textContent = '';
+                }
             } else {
                 ampsInput.value = '';
+                ampsSourceNote.textContent = '';
             }
         }
 
@@ -4143,7 +4254,7 @@
                             });
                         }
                     } else if (item.type === 'folder') {
-                        if (item.wireGaugeData && item.wireGaugeData.amps > 0 && item.wireGaugeData.result.indexOf('Exceeds') === -1) {
+                        if (!item.excludeFromPanel && item.wireGaugeData && item.wireGaugeData.amps > 0 && item.wireGaugeData.result.indexOf('Exceeds') === -1) {
                             const voltage = item.wireGaugeData.voltage || 12;
                             const voltageType = voltage === 120 ? 'AC' : 'DC';
                             const gaugeKey = `${item.wireGaugeData.result} (${voltage}V ${voltageType})`;
@@ -4357,15 +4468,20 @@
                     const folderTotals = getItemTotals(item);
                     let calculationHTML = '<p><strong>Wire Gauge Calculation:</strong> Not calculated</p>';
                     if (item.wireGaugeData && item.wireGaugeData.amps > 0) {
-                        const { amps, length, type, result, voltage } = item.wireGaugeData;
+                        const { amps, originalAmps, safetyFactor, length, type, result, voltage } = item.wireGaugeData;
                         const systemVoltage = voltage || 12;
                         const dropPercent = type === 'critical' ? 0.03 : 0.10;
                         const voltageDrop = systemVoltage * dropPercent;
                         const circularMils = (10.75 * amps * (length * 2)) / voltageDrop;
+                        let safetyFactorStep = '';
+                        if (safetyFactor > 1.0 && originalAmps !== undefined) {
+                            safetyFactorStep = `<li><strong>Safety Factor (1.20 for non-120V circuits)</strong><br>I' = ${originalAmps.toFixed(2)}A × ${safetyFactor} = ${amps.toFixed(2)}A</li>`;
+                        }
                         calculationHTML = `
                             <h4>Wire Gauge Calculation (based on a ${systemVoltage}V system)</h4>
                             <ol>
                                 <li><strong>Voltage Drop (E)</strong> = System Voltage x Allowable Drop %<br>E = ${systemVoltage}V x ${dropPercent * 100}% = ${voltageDrop.toFixed(2)}V</li>
+                                ${safetyFactorStep}
                                 <li><strong>Circular Mils (CM)</strong> = (K x I x L x 2) / E<br>CM = (10.75 x ${amps.toFixed(2)}A x ${length.toFixed(2)}ft x 2) / ${voltageDrop.toFixed(2)}V = <strong>${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM</strong></li>
                                 <li><strong>Result:</strong> The required ${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM corresponds to a final recommendation of <strong>${result}</strong>.</li>
                             </ol>`;
