@@ -1199,6 +1199,7 @@
         const batchCommonFileList = document.getElementById('batch-common-file-list');
 
         let projectName = "Untitled Project";
+        let lastProjectFileHandle = null;
         let placingSymbolType = null;
         let moveSymbolMode = false;
         let deleteSymbolMode = false;
@@ -4179,7 +4180,7 @@
             });
         }
 
-        function saveProject() {
+        async function saveProject() {
             const name = prompt("Enter a name for your project:", projectName === "Untitled Project" ? "" : projectName);
             if (!name) { return; }
             projectName = name;
@@ -4192,6 +4193,35 @@
                 breakerPanel: breakerPanelConfig
             };
             const jsonString = JSON.stringify(projectSaveObject, null, 2);
+
+            // Prefer real file overwrite when the browser supports it.
+            if (window.showSaveFilePicker) {
+                const desiredFilename = projectName + '.json';
+                try {
+                    let fileHandle = lastProjectFileHandle;
+                    if (!fileHandle || fileHandle.name !== desiredFilename) {
+                        fileHandle = await window.showSaveFilePicker({
+                            suggestedName: desiredFilename,
+                            types: [{
+                                description: 'JSON Project Files',
+                                accept: { 'application/json': ['.json'] }
+                            }]
+                        });
+                    }
+
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(jsonString);
+                    await writable.close();
+                    lastProjectFileHandle = fileHandle;
+                    activateButton(saveProjectBtn);
+                    return;
+                } catch (error) {
+                    if (error && error.name === 'AbortError') {
+                        return;
+                    }
+                    console.warn('Save picker failed, falling back to download save.', error);
+                }
+            }
 
             const blob = new Blob([jsonString], {type: 'application/json'});
             const a = document.createElement('a');
