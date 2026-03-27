@@ -370,6 +370,23 @@
             background-color: #f3f4f6;
             cursor: not-allowed;
         }
+        #wire-calculator #exclude-from-panel-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            margin-bottom: 10px;
+            font-weight: normal;
+            font-size: 12px;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+        #wire-calculator #exclude-from-panel-checkbox {
+            display: inline-block;
+            width: auto;
+            margin: 0;
+            flex-shrink: 0;
+        }
         #add-load-btn {
             padding: 10px;
             font-size: 14px;
@@ -993,12 +1010,15 @@
             <select id="folder-select">
                 <option value="">--No Folders Available--</option>
             </select>
-            <label style="display: flex; align-items: center; gap: 6px; margin-top: 8px; margin-bottom: 12px; font-weight: normal;" title="Exclude this folder from breaker panel">
+            <label id="exclude-from-panel-label" title="Exclude this folder from breaker panel">
                 <input type="checkbox" id="exclude-from-panel-checkbox">
                 Exclude from Panel
             </label>
             <label for="amps-input">Current (Amps):</label>
-            <input type="number" id="amps-input" placeholder="e.g., 15" step="0.1" readonly>
+            <div id="amps-input-row" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                <input type="number" id="amps-input" placeholder="e.g., 15" step="0.1" readonly style="margin-bottom: 0; flex: 1;">
+                <span id="amps-safety-note" style="font-size: 12px; color: #4b5563; white-space: nowrap;"></span>
+            </div>
             <div id="amps-source-note" style="font-size: 12px; color: #666; margin-top: 4px; margin-bottom: 12px;"></div>
             <label for="circuit-type">Circuit Type:</label>
             <select id="circuit-type">
@@ -1159,6 +1179,7 @@
         const settingsBtn = document.getElementById('settings-btn');
         const settingsModal = document.getElementById('settings-modal');
         const settingsModalCloseBtn = document.getElementById('settings-modal-close-btn');
+        const ampsSafetyNote = document.getElementById('amps-safety-note');
         const folderViewContainer = document.getElementById('folder-view-container');
         const toolbarsContainer = document.getElementById('toolbars-container');
         const activeFolderDisplay = document.getElementById('active-folder-display');
@@ -3882,6 +3903,7 @@
             if (folderSelect.selectedIndex < 0 || folderSelect.value === "") {
                 ampsInput.value = '';
                 ampsSourceNote.textContent = '';
+                if (ampsSafetyNote) ampsSafetyNote.textContent = '';
                 return;
             }
             
@@ -3918,6 +3940,7 @@
 
                     if (maxOutletRating > 0) {
                         ampsInput.value = maxOutletRating;
+                        if (ampsSafetyNote) ampsSafetyNote.textContent = `(SF: ${maxOutletRating.toFixed(2)}A)`;
                         if (parentFolderForLoad) {
                             ampsSourceNote.textContent = `[Using ${parentFolderForLoad.name} load for wire gauge]`;
                         } else {
@@ -3947,6 +3970,12 @@
                 } else {
                     ampsInput.value = '0';
                 }
+
+                if (ampsSafetyNote) {
+                    const safetyFactor = systemVoltage === 120 ? 1.0 : 1.20;
+                    const safetyAdjustedAmps = displayAmps * safetyFactor;
+                    ampsSafetyNote.textContent = `(SF: ${safetyAdjustedAmps.toFixed(2)}A)`;
+                }
                 
                 if (parentFolderForLoad) {
                     ampsSourceNote.textContent = `[Using ${parentFolderForLoad.name} load for wire gauge]`;
@@ -3956,6 +3985,7 @@
             } else {
                 ampsInput.value = '';
                 ampsSourceNote.textContent = '';
+                if (ampsSafetyNote) ampsSafetyNote.textContent = '';
             }
         }
 
