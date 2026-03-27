@@ -1965,10 +1965,56 @@
         });
 
 
+        function getProtectionDeviceInfo(amps) {
+            if (!isFinite(amps) || amps <= 0) {
+                return {
+                    size: null,
+                    label: 'N/A',
+                    usedLowerWithinTolerance: false,
+                    lowerSize: null,
+                    overshootPercent: 0
+                };
+            }
+
+            const lowerSizes = standardFuseSizes.filter(s => s <= amps);
+            const lowerSize = lowerSizes.length > 0 ? lowerSizes[lowerSizes.length - 1] : null;
+            const nextSize = standardFuseSizes.find(s => s >= amps) || null;
+
+            if (lowerSize !== null && amps > lowerSize) {
+                const toleranceLimit = lowerSize * 1.02;
+                if (amps <= toleranceLimit) {
+                    const overshootPercent = ((amps - lowerSize) / lowerSize) * 100;
+                    return {
+                        size: lowerSize,
+                        label: `${lowerSize}A`,
+                        usedLowerWithinTolerance: true,
+                        lowerSize,
+                        overshootPercent
+                    };
+                }
+            }
+
+            if (nextSize !== null) {
+                return {
+                    size: nextSize,
+                    label: `${nextSize}A`,
+                    usedLowerWithinTolerance: false,
+                    lowerSize,
+                    overshootPercent: 0
+                };
+            }
+
+            return {
+                size: amps,
+                label: `>${standardFuseSizes[standardFuseSizes.length - 1]}A`,
+                usedLowerWithinTolerance: false,
+                lowerSize,
+                overshootPercent: 0
+            };
+        }
+
         function getFuseSize(amps) {
-            if (amps <= 0) return 'N/A';
-            const size = standardFuseSizes.find(s => s >= amps);
-            return size ? `${size}A` : '>100A';
+            return getProtectionDeviceInfo(amps).label;
         }
 
         function renderBreakerPanel() {
@@ -3628,13 +3674,16 @@
             }
         }
         
-        function getWireGaugeResultHTML(length, result, safetyFactor = 1.0, originalAmps = null, finalAmps = null, fuseAmps = null) {
+        function getWireGaugeResultHTML(length, result, safetyFactor = 1.0, originalAmps = null, finalAmps = null, fuseAmps = null, protectionInfo = null) {
             if (result.includes('Exceeds')) {
                 return result;
             }
             let html = `For a ${length.toFixed(2)} ft run (${(length * 2).toFixed(2)} ft total circuit):<br><strong>Recommended: ${result}</strong>`;
             if (fuseAmps) {
                 html += `<br><small style="color:#4b5563;">Sized for ${fuseAmps}A fuse/breaker</small>`;
+                if (protectionInfo && protectionInfo.usedLowerWithinTolerance && finalAmps !== null) {
+                    html += `<br><small style="color:#065f46;">2% rule applied: ${finalAmps.toFixed(2)}A is ${protectionInfo.overshootPercent.toFixed(2)}% over ${protectionInfo.lowerSize}A, so ${protectionInfo.lowerSize}A protection was selected.</small>`;
+                }
             }
             return html;
         }
@@ -3790,7 +3839,8 @@
             const voltageDrop = systemVoltage * dropPercent;
 
             // Use fuse/breaker size for wire gauge so the wire always matches the protection device
-            const fuseAmps = standardFuseSizes.find(s => s >= currentAmps) || currentAmps;
+            const protectionInfo = getProtectionDeviceInfo(currentAmps);
+            const fuseAmps = protectionInfo.size || currentAmps;
 
             const circularMils = (10.75 * fuseAmps * (circuitLengthFeet * 2)) / voltageDrop;
             const voltageDropWire = awgData.find(wire => wire.cm >= circularMils);
@@ -3810,7 +3860,7 @@
             }
 
             const resultValue = recommendedWire ? recommendedWire.awg + " AWG" : "Exceeds standard sizes";
-            resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, resultValue, safetyFactor, originalAmps, currentAmps, fuseAmps);
+            resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, resultValue, safetyFactor, originalAmps, currentAmps, fuseAmps, protectionInfo);
             
             if (mainFolder) {
                 mainFolder.wireGaugeData = {
@@ -4388,6 +4438,11 @@
                     #bom-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
                     #bom-table th, #bom-table td { border: 1px solid #ccc; padding: 8px; text-align: left; }
                     #bom-table th { background-color: #f2f2f2; }
+                    .print-calc-grid { display: flex; gap: 20px; align-items: flex-start; }
+                    .print-calc-left { flex: 2; min-width: 0; }
+                    .print-calc-right { flex: 1; min-width: 220px; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; background-color: #f9fafb; }
+                    .print-calc-right h5 { margin: 0 0 8px 0; font-size: 14px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
+                    .print-calc-right p { margin: 0 0 6px 0; font-size: 12px; line-height: 1.4; }
                 </style>
                 <h1>Project Report: ${projectName}</h1>
             `;
@@ -4506,26 +4561,95 @@
                 } else if (item.type === 'folder') {
                     const summaryDiv = document.createElement('div');
                     const folderTotals = getItemTotals(item);
-                    let calculationHTML = '<p><strong>Wire Gauge Calculation:</strong> Not calculated</p>';
+                    const voltage = (item.wireGaugeData && item.wireGaugeData.voltage) ? item.wireGaugeData.voltage : 12;
+                    let totalWatts = folderTotals.watts + (folderTotals.amps * voltage);
+                    let totalAmps = totalWatts / voltage;
+                    if (item.addedLoadFolders && item.addedLoadFolders.length > 0) {
+                        item.addedLoadFolders.forEach(addedFolderName => {
+                            const addedFolder = findItemByName(addedFolderName);
+                            if (addedFolder) {
+                                const addedTotals = getItemTotals(addedFolder);
+                                totalWatts += addedTotals.watts + (addedTotals.amps * voltage);
+                            }
+                        });
+                        totalAmps = totalWatts / voltage;
+                    }
+
+                    let mainFolderForLoad = null;
+                    let mainFolderTotalAmps = null;
+                    function findMainFolderForReport(name, checkList) {
+                        for (const candidate of checkList) {
+                            if (candidate.type === 'folder' && candidate.addedLoadFolders && candidate.addedLoadFolders.includes(name)) {
+                                return candidate;
+                            }
+                            if (candidate.type === 'folder') {
+                                const found = findMainFolderForReport(name, candidate.children);
+                                if (found) return found;
+                            }
+                        }
+                        return null;
+                    }
+                    mainFolderForLoad = findMainFolderForReport(item.name, items);
+                    if (mainFolderForLoad) {
+                        const mainTotals = getItemTotals(mainFolderForLoad);
+                        const mainVoltage = (mainFolderForLoad.wireGaugeData && mainFolderForLoad.wireGaugeData.voltage) ? mainFolderForLoad.wireGaugeData.voltage : voltage;
+                        let mainWatts = mainTotals.watts + (mainTotals.amps * mainVoltage);
+                        (mainFolderForLoad.addedLoadFolders || []).forEach(addedFolderName => {
+                            const addedFolder = findItemByName(addedFolderName);
+                            if (addedFolder) {
+                                const addedTotals = getItemTotals(addedFolder);
+                                mainWatts += addedTotals.watts + (addedTotals.amps * mainVoltage);
+                            }
+                        });
+                        mainFolderTotalAmps = mainWatts / mainVoltage;
+                    }
+
+                    let panelInfoHTML = `
+                        <h5>Data Panel Info</h5>
+                        <p><strong>Calculation Total:</strong> ${folderTotals.redTotal.toFixed(2)} ft (${(folderTotals.redTotal * 2).toFixed(2)} ft incl. return)</p>
+                        <p><strong>Total Load:</strong> ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)</p>
+                        <p><strong>Exclude From Panel:</strong> ${item.excludeFromPanel ? 'Yes' : 'No'}</p>`;
+                    if (item.addedLoadFolders && item.addedLoadFolders.length > 0) {
+                        panelInfoHTML += `<p><strong>Added Loads:</strong> ${item.addedLoadFolders.join(', ')}</p>`;
+                    }
+                    if (mainFolderForLoad) {
+                        panelInfoHTML += `<p><strong>Load Source:</strong> Using ${mainFolderForLoad.name} (${mainFolderTotalAmps.toFixed(2)} A combined)</p>`;
+                    }
+
+                    let leftCalcHTML = '<p><strong>Wire Gauge Calculation:</strong> Not calculated</p>';
                     if (item.wireGaugeData && item.wireGaugeData.amps > 0) {
-                        const { amps, originalAmps, safetyFactor, length, type, result, voltage } = item.wireGaugeData;
+                        const { amps, originalAmps, safetyFactor, length, type, result } = item.wireGaugeData;
                         const systemVoltage = voltage || 12;
                         const dropPercent = type === 'critical' ? 0.03 : 0.10;
                         const voltageDrop = systemVoltage * dropPercent;
-                        const circularMils = (10.75 * amps * (length * 2)) / voltageDrop;
+                        const protectionInfo = getProtectionDeviceInfo(amps);
+                        const protectionAmps = protectionInfo.size || amps;
+                        const circularMils = (10.75 * protectionAmps * (length * 2)) / voltageDrop;
                         let safetyFactorStep = '';
                         if (safetyFactor > 1.0 && originalAmps !== undefined) {
                             safetyFactorStep = `<li><strong>Safety Factor (1.20 for non-120V circuits)</strong><br>I' = ${originalAmps.toFixed(2)}A × ${safetyFactor} = ${amps.toFixed(2)}A</li>`;
                         }
-                        calculationHTML = `
+                        let toleranceNote = '';
+                        if (protectionInfo.usedLowerWithinTolerance) {
+                            toleranceNote = `<li><strong>2% Fuse/Breaker Rule</strong><br>${amps.toFixed(2)}A is ${protectionInfo.overshootPercent.toFixed(2)}% over ${protectionInfo.lowerSize}A, so ${protectionInfo.lowerSize}A protection is used.</li>`;
+                        }
+                        leftCalcHTML = `
                             <h4>Wire Gauge Calculation (based on a ${systemVoltage}V system)</h4>
                             <ol>
                                 <li><strong>Voltage Drop (E)</strong> = System Voltage x Allowable Drop %<br>E = ${systemVoltage}V x ${dropPercent * 100}% = ${voltageDrop.toFixed(2)}V</li>
                                 ${safetyFactorStep}
-                                <li><strong>Circular Mils (CM)</strong> = (K x I x L x 2) / E<br>CM = (10.75 x ${amps.toFixed(2)}A x ${length.toFixed(2)}ft x 2) / ${voltageDrop.toFixed(2)}V = <strong>${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM</strong></li>
+                                ${toleranceNote}
+                                <li><strong>Protection Size Used (I)</strong><br>I = ${protectionAmps.toFixed(2)}A</li>
+                                <li><strong>Circular Mils (CM)</strong> = (K x I x L x 2) / E<br>CM = (10.75 x ${protectionAmps.toFixed(2)}A x ${length.toFixed(2)}ft x 2) / ${voltageDrop.toFixed(2)}V = <strong>${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM</strong></li>
                                 <li><strong>Result:</strong> The required ${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM corresponds to a final recommendation of <strong>${result}</strong>.</li>
                             </ol>`;
                     }
+
+                    const calculationHTML = `
+                        <div class="print-calc-grid">
+                            <div class="print-calc-left">${leftCalcHTML}</div>
+                            <div class="print-calc-right">${panelInfoHTML}</div>
+                        </div>`;
                     summaryDiv.innerHTML = `
                         <div class="print-summary">
                             <h3>${item.name}</h3>
