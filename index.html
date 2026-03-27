@@ -4288,8 +4288,8 @@
             acPanel.innerHTML = '<h3>120V AC Breakers</h3>';
 
             const allFolders = getFolderTotals(items);
-            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12);
-            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120);
+            const dcFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 12 && !f.excludeFromPanel);
+            const acFolders = allFolders.filter(f => f.wireGaugeData && f.wireGaugeData.voltage === 120 && !f.excludeFromPanel);
 
             for (let i = 0; i < breakerPanelConfig.dcSlots; i++) {
                 const slot = document.createElement('div');
