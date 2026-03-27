@@ -1061,6 +1061,8 @@
         <label><input type="checkbox" id="show-values-toggle" checked> Show Symbol Values</label>
         <label><input type="checkbox" id="show-measurements-toggle" checked> Show Measurements</label>
         <label><input type="checkbox" id="show-guidelines-toggle" checked> Show Guidelines</label>
+        <hr style="border:none;border-top:1px solid #e5e7eb;margin:12px 0;">
+        <button id="recalibrate-btn" style="width:100%;padding:10px;border:none;border-radius:8px;background:#ef4444;color:white;font-size:14px;font-weight:500;cursor:pointer;">Reset &amp; Recalibrate</button>
     </div>
 
     <div id="batch-setup-modal">
@@ -1485,6 +1487,17 @@
             if (event.target == settingsModal) {
                 settingsModal.style.display = "none";
             }
+        });
+        document.getElementById('recalibrate-btn').addEventListener('click', () => {
+            if (!confirm('This will clear the current calibration so you can draw a new one. Continue?')) return;
+            globalScale = null;
+            getFlatLayers().forEach(l => l.scale = null);
+            settingsModal.style.display = 'none';
+            mode = 'calibrate';
+            updateButtonStates();
+            showCustomModal({ type: 'info', message: 'Calibration reset. Click two points on your drawing to set a new scale.' });
+            updateDataPanel();
+            drawGrid();
         });
 
         document.getElementById('circuit-type').addEventListener('change', calculateWireGauge);
@@ -4044,7 +4057,7 @@
                     mirrorGhostAbove: item.mirrorGhostAbove || false
                 };
             } else if (item.type === 'folder') {
-                return { type: 'folder', id: item.id, name: item.name, children: item.children.map(toObject), notes: item.notes || '', wireGaugeData: item.wireGaugeData, addedLoadFolders: item.addedLoadFolders || [] };
+                return { type: 'folder', id: item.id, name: item.name, children: item.children.map(toObject), notes: item.notes || '', wireGaugeData: item.wireGaugeData, addedLoadFolders: item.addedLoadFolders || [], excludeFromPanel: item.excludeFromPanel || false };
             }
         }
 
@@ -4080,7 +4093,7 @@
                     img.src = obj.imageData; drawingImg.src = obj.drawingData;
                 } else if (obj.type === 'folder') {
                     Promise.all(obj.children.map(fromObject)).then(resolvedChildren => {
-                        resolve({ type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [] });
+                        resolve({ type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [], excludeFromPanel: obj.excludeFromPanel || false });
                     }).catch(reject);
                 }
             });
