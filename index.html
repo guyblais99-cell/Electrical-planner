@@ -3627,6 +3627,7 @@
                 
                 folderTotalsData.forEach(folder => {
                     const voltage = (folder.wireGaugeData && folder.wireGaugeData.voltage) ? folder.wireGaugeData.voltage : 12;
+                    const safetyFactorMultiplier = voltage === 120 ? 1.0 : 1.20;
                     let totalWatts = folder.watts + (folder.amps * voltage);
                     let totalAmps = totalWatts / voltage;
                     
@@ -3676,7 +3677,8 @@
                     const li = document.createElement('li');
                     let html = `<strong>${folder.name}</strong><br>
                                 Calculation Total: ${folder.redTotal.toFixed(2)} ft (${(folder.redTotal * 2).toFixed(2)} ft incl. return)<br>
-                                Total Load: ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)`;
+                                Total Load: ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)<br>
+                                <span style="font-size: 12px; color: #4b5563;">(SF: ${(totalAmps * safetyFactorMultiplier).toFixed(2)}A)</span>`;
                     
                     // Show added loads if any
                     if (folderItem && folderItem.addedLoadFolders && folderItem.addedLoadFolders.length > 0) {
@@ -4622,6 +4624,7 @@
                     const summaryDiv = document.createElement('div');
                     const folderTotals = getItemTotals(item);
                     const voltage = (item.wireGaugeData && item.wireGaugeData.voltage) ? item.wireGaugeData.voltage : 12;
+                    const safetyFactorMultiplier = voltage === 120 ? 1.0 : 1.20;
                     let totalWatts = folderTotals.watts + (folderTotals.amps * voltage);
                     let totalAmps = totalWatts / voltage;
                     if (item.addedLoadFolders && item.addedLoadFolders.length > 0) {
@@ -4668,6 +4671,7 @@
                         <h5>Data Panel Info</h5>
                         <p><strong>Calculation Total:</strong> ${folderTotals.redTotal.toFixed(2)} ft (${(folderTotals.redTotal * 2).toFixed(2)} ft incl. return)</p>
                         <p><strong>Total Load:</strong> ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)</p>
+                        <p><span style="font-size: 12px; color: #4b5563;">(SF: ${(totalAmps * safetyFactorMultiplier).toFixed(2)}A)</span></p>
                         <p><strong>Exclude From Panel:</strong> ${item.excludeFromPanel ? 'Yes' : 'No'}</p>`;
                     if (item.addedLoadFolders && item.addedLoadFolders.length > 0) {
                         panelInfoHTML += `<p><strong>Added Loads:</strong> ${item.addedLoadFolders.join(', ')}</p>`;
