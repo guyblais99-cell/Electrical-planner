@@ -4607,16 +4607,15 @@
             collectFolders(items);
             allFolders.forEach(f => f.isHeaderPrinted = false);
             
+            if (breakerPanelConfig) {
+                const panelSection = document.createElement('div');
+                panelSection.innerHTML = '<h2 style="margin-top:24px;">Breaker Panel Layout</h2>';
+                panelSection.appendChild(generatePrintableBreakerPanel());
+                reportContainer.appendChild(panelSection);
+            }
+
             let allFolderSummaries = [];
             await generateLayerPages(items, reportContainer, null, allFolderSummaries);
-            
-            if (breakerPanelConfig) {
-                const panelPage = document.createElement('div');
-                panelPage.className = 'print-page page-break';
-                panelPage.innerHTML = '<h2>Breaker Panel Layout</h2>';
-                panelPage.appendChild(generatePrintableBreakerPanel());
-                reportContainer.appendChild(panelPage);
-            }
 
             if (allFolderSummaries.length > 0) {
                 const finalSummaryPage = document.createElement('div');
@@ -4709,6 +4708,12 @@
                     const layerTitle = document.createElement('h4');
                     layerTitle.textContent = getLayerPath(item);
                     layerImageContainer.appendChild(layerTitle);
+                    if (parentFolder && parentFolder.notes && parentFolder.notes.trim()) {
+                        const folderNotesEl = document.createElement('p');
+                        folderNotesEl.style.cssText = 'margin: 4px 0 10px 0; font-size: 12px; color: #4b5563; font-style: italic; white-space: pre-wrap;';
+                        folderNotesEl.textContent = parentFolder.notes.trim();
+                        layerImageContainer.appendChild(folderNotesEl);
+                    }
                     const layerImage = await getLayerAsImage(item);
                     if (layerImage) layerImageContainer.appendChild(layerImage);
                     pageDiv.appendChild(layerImageContainer);
