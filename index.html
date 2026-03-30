@@ -2574,6 +2574,7 @@
                     deleteSymbolMode = false;
                     mode = 'select';
                     updateButtonStates();
+                    updateDataPanel();
                     e.preventDefault();
                     return;
                 }
@@ -2835,6 +2836,7 @@
             } else if (mode === 'draw' && currentPath && !drawDeleteMode) {
                 layer.drawingPreview = { x: canvasX, y: canvasY };
                 redrawLayer(layer);
+                updateDataPanel();
             } else if (mode === 'measure' && currentMeasurement) {
                 if (currentMeasurement.step === 1) {
                     const p1 = currentMeasurement.p1;
@@ -2949,6 +2951,7 @@
             if (layer.drawingPreview) {
                 layer.drawingPreview = null;
                 redrawLayer(layer);
+                updateDataPanel();
             }
             if (layer.extraLengthPreview) {
                 layer.extraLengthPreview = null;
@@ -3596,15 +3599,35 @@
             if (dataPanelItem && dataPanelItem.type === 'layer') {
                 const lengthDisplay = document.createElement('p');
                 const totals = getItemTotals(dataPanelItem);
+                const parentInfo = findParent(dataPanelItem);
+                const activeFolderName = parentInfo && parentInfo.parent ? parentInfo.parent.name : 'Top Level';
+                let liveRedTotal = totals.redTotal;
+
+                if (
+                    dataPanelItem === activeLayer &&
+                    mode === 'draw' &&
+                    !drawDeleteMode &&
+                    currentPath &&
+                    dataPanelItem.drawingPreview &&
+                    dataPanelItem.scale !== null &&
+                    currentPath.points.length > 0 &&
+                    currentPath.color === 'red'
+                ) {
+                    const lastPoint = currentPath.points[currentPath.points.length - 1];
+                    const previewPoint = dataPanelItem.drawingPreview;
+                    const liveSegmentFeet = Math.hypot(previewPoint.x - lastPoint.x, previewPoint.y - lastPoint.y) * dataPanelItem.scale;
+                    liveRedTotal += liveSegmentFeet;
+                }
 
                 if (dataPanelItem.scale !== null || totals.redTotal > 0) {
-                        lengthDisplay.innerHTML = `<strong>Active Layer (${dataPanelItem.name})</strong><br>
-                        <small>Calculation Total: ${totals.redTotal.toFixed(2)} ft (${(totals.redTotal * 2).toFixed(2)} ft incl. return)</small>`;  
+                        lengthDisplay.innerHTML = `<strong>Active Folder (${activeFolderName})</strong><br>
+                        <small>Layer: ${dataPanelItem.name}</small><br>
+                        <small>Calculation Total: ${liveRedTotal.toFixed(2)} ft (${(liveRedTotal * 2).toFixed(2)} ft incl. return)</small>`;
                         if(dataPanelItem.scale === null && totals.redTotal > 0) {
                         lengthDisplay.innerHTML += '<br><small>(Calibrate to include drawn lines)</small>';
                         }
                 } else {
-                        lengthDisplay.textContent = `Calibrate to see lengths for active layer (${dataPanelItem.name})`;
+                        lengthDisplay.textContent = `Calibrate to see lengths for active folder (${activeFolderName})`;
                 }
                 activeItemDetailsDiv.appendChild(lengthDisplay);
             }
