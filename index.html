@@ -375,6 +375,17 @@
             align-items: center;
             gap: 6px;
             margin-top: 8px;
+            margin-bottom: 6px;
+            font-weight: normal;
+            font-size: 12px;
+            line-height: 1.1;
+            white-space: nowrap;
+        }
+        #wire-calculator #single-run-length-label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 0;
             margin-bottom: 10px;
             font-weight: normal;
             font-size: 12px;
@@ -382,6 +393,12 @@
             white-space: nowrap;
         }
         #wire-calculator #exclude-from-panel-checkbox {
+            display: inline-block;
+            width: auto;
+            margin: 0;
+            flex-shrink: 0;
+        }
+        #wire-calculator #single-run-length-checkbox {
             display: inline-block;
             width: auto;
             margin: 0;
@@ -1033,6 +1050,10 @@
                 <input type="checkbox" id="exclude-from-panel-checkbox">
                 Exclude from Panel
             </label>
+            <label id="single-run-length-label" title="Use the measured run length once instead of doubling for the return path">
+                <input type="checkbox" id="single-run-length-checkbox">
+                Single Run Length Only
+            </label>
             <label for="amps-input">Current (Amps):</label>
             <div id="amps-input-row" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
                 <input type="number" id="amps-input" placeholder="e.g., 15" step="0.1" readonly style="margin-bottom: 0; flex: 1;">
@@ -1161,6 +1182,7 @@
         const gridCtx = gridCanvas.getContext('2d');
         const folderSelect = document.getElementById('folder-select');
         const excludeFromPanelCheckbox = document.getElementById('exclude-from-panel-checkbox');
+        const singleRunLengthCheckbox = document.getElementById('single-run-length-checkbox');
         const symbolToolbar = document.getElementById('symbol-toolbar');
         const symbolMoveModeBtn = document.getElementById('symbol-move-mode-btn');
         const symbolDeleteModeBtn = document.getElementById('symbol-delete-mode-btn');
@@ -1555,6 +1577,18 @@
                 if (breakerPanelConfig) {
                     renderBreakerPanel();
                 }
+            }
+        });
+        singleRunLengthCheckbox.addEventListener('change', () => {
+            if (folderSelect.selectedIndex < 0 || folderSelect.value === "") return;
+
+            const selectedFolderName = folderSelect.options[folderSelect.selectedIndex].dataset.folderName;
+            const selectedFolder = findItemByName(selectedFolderName);
+
+            if (selectedFolder) {
+                selectedFolder.singleRunLengthOnly = singleRunLengthCheckbox.checked;
+                calculateWireGauge();
+                updateDataPanel();
             }
         });
         document.querySelectorAll('input[name="voltage-type"]').forEach(radio => {
@@ -1981,6 +2015,7 @@
                     selected: false,
                     expanded: false,
                     notes: '',
+                    singleRunLengthOnly: false,
                     addedLoadFolders: [],
                     wireGaugeData: {
                         amps: 0,
@@ -3622,7 +3657,7 @@
                 if (dataPanelItem.scale !== null || totals.redTotal > 0) {
                         lengthDisplay.innerHTML = `<strong>Active Folder (${activeFolderName})</strong><br>
                         <small>Layer: ${dataPanelItem.name}</small><br>
-                        <small>Calculation Total: ${liveRedTotal.toFixed(2)} ft (${(liveRedTotal * 2).toFixed(2)} ft incl. return)</small>`;
+                    <small>Calculation Total: ${getLengthSummaryHTML(liveRedTotal, parentInfo && parentInfo.parent)}</small>`;
                         if(dataPanelItem.scale === null && totals.redTotal > 0) {
                         lengthDisplay.innerHTML += '<br><small>(Calibrate to include drawn lines)</small>';
                         }
@@ -3718,7 +3753,7 @@
                     
                     const li = document.createElement('li');
                     let html = `<strong>${folder.name}</strong><br>
-                                Calculation Total: ${folder.redTotal.toFixed(2)} ft (${(folder.redTotal * 2).toFixed(2)} ft incl. return)<br>
+                                Calculation Total: ${getLengthSummaryHTML(folder.redTotal, folder)}<br>
                                 Total Load: ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)<br>
                                 <span style="font-size: 12px; color: #4b5563;">(SF: ${(totalAmps * safetyFactorMultiplier).toFixed(2)}A)</span>`;
                     
@@ -3742,17 +3777,24 @@
         
         function getWireGaugeResultHTML(length, result, options = {}) {
             const {
+                folder = null,
                 finalAmps = null,
                 fuseAmps = null,
                 protectionInfo = null,
                 abycResult = null,
-                useAbycRecommendation = false
+                useAbycRecommendation = false,
+                abycControlledByName = null,
+                abycControlLocked = false
             } = options;
 
             if (result.includes('Exceeds')) {
                 return result;
             }
-            let html = `For a ${length.toFixed(2)} ft run (${(length * 2).toFixed(2)} ft total circuit):<br><strong>Recommended: ${result}</strong>`;
+            const effectiveLength = getEffectiveCircuitLength(length, folder);
+            const lengthDescription = usesSingleRunLength(folder)
+                ? `${length.toFixed(2)} ft run (${effectiveLength.toFixed(2)} ft total circuit, single run)`
+                : `${length.toFixed(2)} ft run (${effectiveLength.toFixed(2)} ft total circuit)`;
+            let html = `For a ${lengthDescription}:<br><strong>Recommended: ${result}</strong>`;
             if (fuseAmps) {
                 html += `<br><small style="color:#4b5563;">Sized for ${fuseAmps}A fuse/breaker</small>`;
                 if (protectionInfo && protectionInfo.usedLowerWithinTolerance && finalAmps !== null) {
@@ -3760,7 +3802,11 @@
                 }
             }
             if (abycResult && !abycResult.includes('Exceeds')) {
-                html += `<div class="abyc-option-line">ABYC recommended gauge: <strong>${abycResult}</strong><label><input type="checkbox" id="use-abyc-checkbox" ${useAbycRecommendation ? 'checked' : ''}>Use ABYC recommendation</label></div>`;
+                html += `<div class="abyc-option-line">ABYC recommended gauge: <strong>${abycResult}</strong><label><input type="checkbox" id="use-abyc-checkbox" ${useAbycRecommendation ? 'checked' : ''} ${abycControlLocked ? 'disabled' : ''}>Use ABYC recommendation</label>`;
+                if (abycControlledByName) {
+                    html += `<div style="margin-top: 4px; color: #4b5563;">Controlled by ${abycControlledByName}</div>`;
+                }
+                html += `</div>`;
             }
             return html;
         }
@@ -3790,6 +3836,251 @@
             return symbols;
         }
 
+        function findLoadSourceFolder(currentFolderName, checkList = items) {
+            for (const item of checkList) {
+                if (item.type === 'folder' && item.addedLoadFolders && item.addedLoadFolders.includes(currentFolderName)) {
+                    return item;
+                }
+                if (item.type === 'folder') {
+                    const found = findLoadSourceFolder(currentFolderName, item.children);
+                    if (found) return found;
+                }
+            }
+            return null;
+        }
+
+        function usesSingleRunLength(folder) {
+            return !!(folder && folder.singleRunLengthOnly);
+        }
+
+        function getCircuitLengthMultiplier(folder) {
+            return usesSingleRunLength(folder) ? 1 : 2;
+        }
+
+        function getEffectiveCircuitLength(length, folder) {
+            return length * getCircuitLengthMultiplier(folder);
+        }
+
+        function getLengthSummaryHTML(length, folder, label = 'total circuit') {
+            const effectiveLength = getEffectiveCircuitLength(length, folder);
+            if (usesSingleRunLength(folder)) {
+                return `${length.toFixed(2)} ft (${effectiveLength.toFixed(2)} ft ${label}, single run)`;
+            }
+            return `${length.toFixed(2)} ft (${effectiveLength.toFixed(2)} ft ${label}, incl. return)`;
+        }
+
+        function syncDependentWireGaugeData(sourceFolder) {
+            if (!sourceFolder || sourceFolder.type !== 'folder') return;
+
+            getFolderTotals(items).forEach(folder => {
+                if (folder.name === sourceFolder.name) return;
+                const folderItem = findItemByName(folder.name);
+                const controllingFolder = findLoadSourceFolder(folder.name);
+                if (!folderItem || !controllingFolder || controllingFolder.name !== sourceFolder.name) return;
+                computeAndStoreWireGaugeForFolder(folderItem, { readAbycFromDom: false });
+            });
+        }
+
+        function computeAndStoreWireGaugeForFolder(mainFolder, options = {}) {
+            if (!mainFolder) return null;
+
+            const circuitType = options.circuitType || mainFolder.wireGaugeData?.type || document.getElementById('circuit-type').value;
+            const systemVoltage = options.systemVoltage || mainFolder.wireGaugeData?.voltage || parseFloat(document.querySelector('input[name="voltage-type"]:checked').value) || 12;
+            const folderTotals = getItemTotals(mainFolder);
+
+            let addedWatts = 0;
+            let addedAmps = 0;
+            (mainFolder.addedLoadFolders || []).forEach(folderName => {
+                const otherFolder = findItemByName(folderName);
+                if (otherFolder) {
+                    const otherTotals = getItemTotals(otherFolder);
+                    addedWatts += otherTotals.watts;
+                    addedAmps += otherTotals.amps;
+                }
+            });
+
+            const loadSourceFolder = findLoadSourceFolder(mainFolder.name);
+            const abycControlFolder = loadSourceFolder || mainFolder;
+
+            let ampsForCalculation;
+            if (loadSourceFolder) {
+                const sourceTotals = getItemTotals(loadSourceFolder);
+                let sourceAddedWatts = 0;
+                let sourceAddedAmps = 0;
+                (loadSourceFolder.addedLoadFolders || []).forEach(folderName => {
+                    const folder = findItemByName(folderName);
+                    if (folder) {
+                        const totals = getItemTotals(folder);
+                        sourceAddedWatts += totals.watts;
+                        sourceAddedAmps += totals.amps;
+                    }
+                });
+                ampsForCalculation = (sourceTotals.watts + sourceAddedWatts) / systemVoltage + sourceTotals.amps + sourceAddedAmps;
+            } else {
+                ampsForCalculation = (folderTotals.watts + addedWatts) / systemVoltage + folderTotals.amps + addedAmps;
+            }
+
+            const circuitLengthFeet = folderTotals.redTotal;
+            const circuitLengthMultiplier = getCircuitLengthMultiplier(mainFolder);
+            const effectiveCircuitLength = getEffectiveCircuitLength(circuitLengthFeet, mainFolder);
+            const totalAddedWatts = addedWatts + (addedAmps * systemVoltage);
+            const readAbycFromDom = options.readAbycFromDom === true;
+
+            let currentAmps = ampsForCalculation;
+            if (isNaN(circuitLengthFeet) || circuitLengthFeet < 0) {
+                return { message: 'Please select a valid folder.', totalAddedWatts };
+            }
+            if (isNaN(currentAmps) || currentAmps < 0) {
+                return { message: 'Invalid current.', totalAddedWatts };
+            }
+
+            if (systemVoltage === 120) {
+                const folderToCheck = loadSourceFolder || mainFolder;
+                const allSymbols = getAllSymbolsInItem(folderToCheck);
+                let maxOutletRating = 0;
+                allSymbols.forEach(symbol => {
+                    if (symbol.type === 'outlet' && symbol.rating > maxOutletRating) {
+                        maxOutletRating = symbol.rating;
+                    }
+                });
+
+                if (maxOutletRating > 0) {
+                    let resultValue;
+                    if (maxOutletRating >= 30) {
+                        resultValue = '10 AWG';
+                    } else if (maxOutletRating >= 20) {
+                        resultValue = '12 AWG';
+                    } else {
+                        resultValue = '14 AWG';
+                    }
+
+                    const abycDropPercent = circuitType === 'critical' ? 0.03 : 0.10;
+                    const abycVoltageDrop = systemVoltage * abycDropPercent;
+                    const abycCircularMils = (10.75 * maxOutletRating * effectiveCircuitLength) / abycVoltageDrop;
+                    const abycVdWire = awgData.find(wire => wire.cm >= abycCircularMils);
+                    const abycAmpWire = awgData.find(wire => wire.ampacity >= maxOutletRating);
+                    let abycRecommendedWire;
+                    if (!abycVdWire && !abycAmpWire) abycRecommendedWire = null;
+                    else if (!abycVdWire) abycRecommendedWire = abycAmpWire;
+                    else if (!abycAmpWire) abycRecommendedWire = abycVdWire;
+                    else abycRecommendedWire = awgData[Math.max(awgData.indexOf(abycVdWire), awgData.indexOf(abycAmpWire))];
+                    const abycResultValue = abycRecommendedWire ? abycRecommendedWire.awg + ' AWG' : 'Exceeds standard sizes';
+                    const existingOverride = abycControlFolder.wireGaugeData && abycControlFolder.wireGaugeData.useAbycRecommendation === true;
+                    const currentAbycCheckbox = readAbycFromDom ? document.getElementById('use-abyc-checkbox') : null;
+                    const useAbycRecommendation = (currentAbycCheckbox ? currentAbycCheckbox.checked : existingOverride) && !abycResultValue.includes('Exceeds');
+                    const finalResultValue = useAbycRecommendation ? abycResultValue : resultValue;
+
+                    currentAmps = maxOutletRating;
+                    mainFolder.wireGaugeData = {
+                        amps: currentAmps,
+                        type: circuitType,
+                        length: circuitLengthFeet,
+                        result: finalResultValue,
+                        calculatorRecommendedResult: resultValue,
+                        abycRecommendedResult: abycResultValue,
+                        useAbycRecommendation,
+                        voltage: systemVoltage,
+                        singleRunLengthOnly: usesSingleRunLength(mainFolder),
+                        circuitLengthMultiplier: circuitLengthMultiplier,
+                        abycControlledBy: abycControlFolder.name !== mainFolder.name ? abycControlFolder.name : null
+                    };
+
+                    return {
+                        totalAddedWatts,
+                        folder: mainFolder,
+                        abycControlFolder,
+                        loadSourceFolder,
+                        finalResultValue,
+                        htmlOptions: {
+                            folder: mainFolder,
+                            abycResult: abycResultValue,
+                            useAbycRecommendation,
+                            abycControlledByName: abycControlFolder.name !== mainFolder.name ? abycControlFolder.name : null,
+                            abycControlLocked: abycControlFolder.name !== mainFolder.name
+                        }
+                    };
+                }
+            }
+
+            let originalAmps = currentAmps;
+            let safetyFactor = 1.0;
+            if (systemVoltage !== 120) {
+                safetyFactor = 1.20;
+                currentAmps *= safetyFactor;
+            }
+            if (currentAmps === 0 && circuitLengthFeet > 0) {
+                return { message: 'No load to calculate for this run.', totalAddedWatts };
+            }
+
+            const dropPercent = circuitType === 'critical' ? 0.03 : 0.10;
+            const voltageDrop = systemVoltage * dropPercent;
+            const protectionInfo = getProtectionDeviceInfo(currentAmps);
+            const fuseAmps = protectionInfo.size || currentAmps;
+            const circularMils = (10.75 * fuseAmps * effectiveCircuitLength) / voltageDrop;
+            const voltageDropWire = awgData.find(wire => wire.cm >= circularMils);
+            const ampacityWire = awgData.find(wire => wire.ampacity >= fuseAmps);
+
+            let recommendedWire;
+            if (!voltageDropWire && !ampacityWire) {
+                recommendedWire = null;
+            } else if (!voltageDropWire) {
+                recommendedWire = ampacityWire;
+            } else if (!ampacityWire) {
+                recommendedWire = voltageDropWire;
+            } else {
+                recommendedWire = awgData[Math.max(awgData.indexOf(voltageDropWire), awgData.indexOf(ampacityWire))];
+            }
+
+            const resultValue = recommendedWire ? recommendedWire.awg + ' AWG' : 'Exceeds standard sizes';
+            const abycCircularMils = (10.75 * originalAmps * effectiveCircuitLength) / voltageDrop;
+            const abycVdWire = awgData.find(wire => wire.cm >= abycCircularMils);
+            const abycAmpWire = awgData.find(wire => wire.ampacity >= originalAmps);
+            let abycRecommendedWire;
+            if (!abycVdWire && !abycAmpWire) abycRecommendedWire = null;
+            else if (!abycVdWire) abycRecommendedWire = abycAmpWire;
+            else if (!abycAmpWire) abycRecommendedWire = abycVdWire;
+            else abycRecommendedWire = awgData[Math.max(awgData.indexOf(abycVdWire), awgData.indexOf(abycAmpWire))];
+            const abycResultValue = abycRecommendedWire ? abycRecommendedWire.awg + ' AWG' : 'Exceeds standard sizes';
+            const existingOverride = abycControlFolder.wireGaugeData && abycControlFolder.wireGaugeData.useAbycRecommendation === true;
+            const currentAbycCheckbox = readAbycFromDom ? document.getElementById('use-abyc-checkbox') : null;
+            const useAbycRecommendation = (currentAbycCheckbox ? currentAbycCheckbox.checked : existingOverride) && !abycResultValue.includes('Exceeds');
+            const finalResultValue = useAbycRecommendation ? abycResultValue : resultValue;
+
+            mainFolder.wireGaugeData = {
+                amps: currentAmps,
+                originalAmps: originalAmps,
+                safetyFactor: safetyFactor,
+                type: circuitType,
+                length: circuitLengthFeet,
+                result: finalResultValue,
+                calculatorRecommendedResult: resultValue,
+                abycRecommendedResult: abycResultValue,
+                useAbycRecommendation,
+                voltage: systemVoltage,
+                singleRunLengthOnly: usesSingleRunLength(mainFolder),
+                circuitLengthMultiplier: circuitLengthMultiplier,
+                abycControlledBy: abycControlFolder.name !== mainFolder.name ? abycControlFolder.name : null
+            };
+
+            return {
+                totalAddedWatts,
+                folder: mainFolder,
+                abycControlFolder,
+                loadSourceFolder,
+                finalResultValue,
+                htmlOptions: {
+                    folder: mainFolder,
+                    finalAmps: currentAmps,
+                    fuseAmps,
+                    protectionInfo,
+                    abycResult: abycResultValue,
+                    useAbycRecommendation,
+                    abycControlledByName: abycControlFolder.name !== mainFolder.name ? abycControlFolder.name : null,
+                    abycControlLocked: abycControlFolder.name !== mainFolder.name
+                }
+            };
+        }
+
         function calculateWireGauge() {
             const circuitTypeSelect = document.getElementById('circuit-type');
             const resultDiv = document.getElementById('wire-gauge-result');
@@ -3804,211 +4095,33 @@
             const folderName = selectedOption.dataset.folderName;
             const mainFolder = findItemByName(folderName);
             if (!mainFolder) return;
-            const folderTotals = getItemTotals(mainFolder);
-
-            let addedWatts = 0;
-            let addedAmps = 0;
-            (mainFolder.addedLoadFolders || []).forEach(folderName => {
-                const otherFolder = findItemByName(folderName);
-                if (otherFolder) {
-                    const otherTotals = getItemTotals(otherFolder);
-                    addedWatts += otherTotals.watts;
-                    addedAmps += otherTotals.amps;
-                }
-            });
-            
-            // Check if this folder is adding its load to another folder
-            let parentFolderForLoad = null;
-            function findParentFolderWithAdded(currentFolderName, checkList = items) {
-                for (const item of checkList) {
-                    if (item.type === 'folder' && item.addedLoadFolders && item.addedLoadFolders.includes(currentFolderName)) {
-                        return item;
-                    }
-                    if (item.type === 'folder') {
-                        const found = findParentFolderWithAdded(currentFolderName, item.children);
-                        if (found) return found;
-                    }
-                }
-                return null;
-            }
-            parentFolderForLoad = findParentFolderWithAdded(folderName);
-            
-            // Calculate the amperage to use for wire gauge
-            let ampsForCalculation;
-            if (parentFolderForLoad) {
-                // This folder is adding load to another folder, use parent's total amps
-                const parentTotals = getItemTotals(parentFolderForLoad);
-                let parentAddedWatts = 0;
-                let parentAddedAmps = 0;
-                (parentFolderForLoad.addedLoadFolders || []).forEach(fName => {
-                    const f = findItemByName(fName);
-                    if (f) {
-                        const t = getItemTotals(f);
-                        parentAddedWatts += t.watts;
-                        parentAddedAmps += t.amps;
-                    }
-                });
-                const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
-                ampsForCalculation = (parentTotals.watts + parentAddedWatts) / systemVoltage + parentTotals.amps + parentAddedAmps;
-            } else {
-                // Use this folder's total amps (including any added loads)
-                const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
-                ampsForCalculation = (folderTotals.watts + addedWatts) / systemVoltage + folderTotals.amps + addedAmps;
-            }
-            
-            const systemVoltage = parseFloat(document.querySelector('input[name="voltage-type"]:checked').value);
-            const totalAddedWatts = addedWatts + (addedAmps * systemVoltage);
-            updateAddLoadButtonText(totalAddedWatts);
-
-            const totalWatts = folderTotals.watts + addedWatts;
-            const totalAmps = folderTotals.amps + addedAmps;
-            let currentAmps = ampsForCalculation;
-            const circuitLengthFeet = parseFloat(selectedOption.value);
-            const circuitType = circuitTypeSelect.value;
             resultDiv.style.display = 'block';
 
-            // New 120V AC Heuristic Logic
-            if (systemVoltage === 120) {
-                const folderToCheck = parentFolderForLoad || mainFolder;
-                const allSymbols = getAllSymbolsInItem(folderToCheck);
-                let maxOutletRating = 0;
-                allSymbols.forEach(s => {
-                    if (s.type === 'outlet' && s.rating > maxOutletRating) {
-                        maxOutletRating = s.rating;
-                    }
-                });
+            const computation = computeAndStoreWireGaugeForFolder(mainFolder, {
+                circuitType: circuitTypeSelect.value,
+                systemVoltage: parseFloat(document.querySelector('input[name="voltage-type"]:checked').value),
+                readAbycFromDom: true
+            });
 
-                if (maxOutletRating > 0) {
-                    let resultValue;
-                    if (maxOutletRating >= 30) {
-                        resultValue = "10 AWG";
-                    } else if (maxOutletRating >= 20) {
-                        resultValue = "12 AWG";
-                    } else { // 15A or less
-                        resultValue = "14 AWG";
-                    }
-                    const abycDropPercent = circuitType === 'critical' ? 0.03 : 0.10;
-                    const abycVoltageDrop = systemVoltage * abycDropPercent;
-                    const abycCircularMils = (10.75 * maxOutletRating * (circuitLengthFeet * 2)) / abycVoltageDrop;
-                    const abycVdWire = awgData.find(wire => wire.cm >= abycCircularMils);
-                    const abycAmpWire = awgData.find(wire => wire.ampacity >= maxOutletRating);
-                    let abycRecommendedWire;
-                    if (!abycVdWire && !abycAmpWire) abycRecommendedWire = null;
-                    else if (!abycVdWire) abycRecommendedWire = abycAmpWire;
-                    else if (!abycAmpWire) abycRecommendedWire = abycVdWire;
-                    else abycRecommendedWire = awgData[Math.max(awgData.indexOf(abycVdWire), awgData.indexOf(abycAmpWire))];
-                    const abycResultValue = abycRecommendedWire ? abycRecommendedWire.awg + " AWG" : "Exceeds standard sizes";
-                    const existingOverride = mainFolder.wireGaugeData && mainFolder.wireGaugeData.useAbycRecommendation === true;
-                    const currentAbycCheckbox = document.getElementById('use-abyc-checkbox');
-                    const useAbycRecommendation = (currentAbycCheckbox ? currentAbycCheckbox.checked : existingOverride) && !abycResultValue.includes('Exceeds');
-                    const finalResultValue = useAbycRecommendation ? abycResultValue : resultValue;
+            updateAddLoadButtonText(computation?.totalAddedWatts || 0);
 
-                    resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, finalResultValue, {
-                        abycResult: abycResultValue,
-                        useAbycRecommendation
-                    });
-                    const abycCheckbox = document.getElementById('use-abyc-checkbox');
-                    if (abycCheckbox) {
-                        abycCheckbox.addEventListener('change', calculateWireGauge);
-                    }
-                    currentAmps = maxOutletRating; // Ensure the stored amps reflects the rating
-                    mainFolder.wireGaugeData = {
-                        amps: currentAmps,
-                        type: circuitType,
-                        length: circuitLengthFeet,
-                        result: finalResultValue,
-                        calculatorRecommendedResult: resultValue,
-                        abycRecommendedResult: abycResultValue,
-                        useAbycRecommendation,
-                        voltage: systemVoltage
-                    };
-                    checkPanelCapacityAndWarn();
-                    return; // Bypass the rest of the calculation
-                }
-            }
-
-            // Original Voltage Drop Calculation (for 12V DC or 120V AC without rated outlets)
-            let originalAmps = currentAmps;
-            let safetyFactor = 1.0;
-            if (systemVoltage !== 120) {
-                safetyFactor = 1.20; // 1.20 safety de-rating factor for non-120V circuits
-                currentAmps *= safetyFactor;
-            }
-            if (isNaN(circuitLengthFeet) || circuitLengthFeet < 0) { resultDiv.textContent = 'Please select a valid folder.'; return; }
-            if (isNaN(currentAmps) || currentAmps < 0) {
-                 resultDiv.textContent = 'Invalid current.';
-                 return;
-            }
-             if (currentAmps === 0 && circuitLengthFeet > 0) {
-                resultDiv.textContent = 'No load to calculate for this run.';
+            if (!computation) {
+                resultDiv.textContent = '';
                 return;
             }
 
-            const dropPercent = circuitType === 'critical' ? 0.03 : 0.10;
-            const voltageDrop = systemVoltage * dropPercent;
-
-            // Use fuse/breaker size for wire gauge so the wire always matches the protection device
-            const protectionInfo = getProtectionDeviceInfo(currentAmps);
-            const fuseAmps = protectionInfo.size || currentAmps;
-
-            const circularMils = (10.75 * fuseAmps * (circuitLengthFeet * 2)) / voltageDrop;
-            const voltageDropWire = awgData.find(wire => wire.cm >= circularMils);
-            const ampacityWire = awgData.find(wire => wire.ampacity >= fuseAmps);
-
-            let recommendedWire;
-            if (!voltageDropWire && !ampacityWire) {
-                recommendedWire = null;
-            } else if (!voltageDropWire) {
-                recommendedWire = ampacityWire;
-            } else if (!ampacityWire) {
-                recommendedWire = voltageDropWire;
-            } else {
-                const vdIdx = awgData.indexOf(voltageDropWire);
-                const ampIdx = awgData.indexOf(ampacityWire);
-                recommendedWire = awgData[Math.max(vdIdx, ampIdx)];
+            if (computation.message) {
+                resultDiv.textContent = computation.message;
+                return;
             }
 
-            const resultValue = recommendedWire ? recommendedWire.awg + " AWG" : "Exceeds standard sizes";
-            const abycCircularMils = (10.75 * originalAmps * (circuitLengthFeet * 2)) / voltageDrop;
-            const abycVdWire = awgData.find(wire => wire.cm >= abycCircularMils);
-            const abycAmpWire = awgData.find(wire => wire.ampacity >= originalAmps);
-            let abycRecommendedWire;
-            if (!abycVdWire && !abycAmpWire) abycRecommendedWire = null;
-            else if (!abycVdWire) abycRecommendedWire = abycAmpWire;
-            else if (!abycAmpWire) abycRecommendedWire = abycVdWire;
-            else abycRecommendedWire = awgData[Math.max(awgData.indexOf(abycVdWire), awgData.indexOf(abycAmpWire))];
-            const abycResultValue = abycRecommendedWire ? abycRecommendedWire.awg + " AWG" : "Exceeds standard sizes";
-            const existingOverride = mainFolder.wireGaugeData && mainFolder.wireGaugeData.useAbycRecommendation === true;
-            const currentAbycCheckbox = document.getElementById('use-abyc-checkbox');
-            const useAbycRecommendation = (currentAbycCheckbox ? currentAbycCheckbox.checked : existingOverride) && !abycResultValue.includes('Exceeds');
-            const finalResultValue = useAbycRecommendation ? abycResultValue : resultValue;
-
-            resultDiv.innerHTML = getWireGaugeResultHTML(circuitLengthFeet, finalResultValue, {
-                finalAmps: currentAmps,
-                fuseAmps,
-                protectionInfo,
-                abycResult: abycResultValue,
-                useAbycRecommendation
-            });
+            resultDiv.innerHTML = getWireGaugeResultHTML(mainFolder.wireGaugeData.length, computation.finalResultValue, computation.htmlOptions);
             const abycCheckbox = document.getElementById('use-abyc-checkbox');
-            if (abycCheckbox) {
+            if (abycCheckbox && !computation.htmlOptions.abycControlLocked) {
                 abycCheckbox.addEventListener('change', calculateWireGauge);
             }
-            
-            if (mainFolder) {
-                mainFolder.wireGaugeData = {
-                    amps: currentAmps,
-                    originalAmps: originalAmps,
-                    safetyFactor: safetyFactor,
-                    type: circuitType,
-                    length: circuitLengthFeet,
-                    result: finalResultValue,
-                    calculatorRecommendedResult: resultValue,
-                    abycRecommendedResult: abycResultValue,
-                    useAbycRecommendation,
-                    voltage: systemVoltage
-                };
-            }
+
+            syncDependentWireGaugeData(mainFolder);
             checkPanelCapacityAndWarn();
         }
         
@@ -4115,6 +4228,8 @@
                 resultDiv.textContent = '';
                 excludeFromPanelCheckbox.checked = false;
                 excludeFromPanelCheckbox.disabled = true;
+                singleRunLengthCheckbox.checked = false;
+                singleRunLengthCheckbox.disabled = true;
                 updateAmpsDisplay();
                 populateAddLoadDropdown();
                 return;
@@ -4127,9 +4242,13 @@
             if (folder) {
                 excludeFromPanelCheckbox.checked = folder.excludeFromPanel || false;
                 excludeFromPanelCheckbox.disabled = false;
+                singleRunLengthCheckbox.checked = usesSingleRunLength(folder);
+                singleRunLengthCheckbox.disabled = false;
             } else {
                 excludeFromPanelCheckbox.checked = false;
                 excludeFromPanelCheckbox.disabled = true;
+                singleRunLengthCheckbox.checked = false;
+                singleRunLengthCheckbox.disabled = true;
             }
 
             if (folder && folder.wireGaugeData) {
@@ -4140,6 +4259,7 @@
                     document.getElementById('voltage-dc').checked = true;
                 }
                 resultDiv.innerHTML = getWireGaugeResultHTML(folder.wireGaugeData.length, folder.wireGaugeData.result, {
+                    folder: folder,
                     abycResult: folder.wireGaugeData.abycRecommendedResult || null,
                     useAbycRecommendation: folder.wireGaugeData.useAbycRecommendation === true
                 });
@@ -4159,6 +4279,7 @@
             const folderToAddName = checkbox.value;
             const mainFolderName = folderSelect.options[folderSelect.selectedIndex].dataset.folderName;
             const mainFolder = findItemByName(mainFolderName);
+            let detachedChildHadAbycControl = false;
 
             if (!mainFolder.addedLoadFolders) {
                 mainFolder.addedLoadFolders = [];
@@ -4169,12 +4290,27 @@
                     mainFolder.addedLoadFolders.push(folderToAddName);
                 }
             } else {
+                const affectedFolderBeforeDetach = findItemByName(folderToAddName);
+                detachedChildHadAbycControl = !!(affectedFolderBeforeDetach && affectedFolderBeforeDetach.wireGaugeData && affectedFolderBeforeDetach.wireGaugeData.abycControlledBy);
                 mainFolder.addedLoadFolders = mainFolder.addedLoadFolders.filter(name => name !== folderToAddName);
             }
             
             updateAmpsDisplay();
             updateFolderTotalsDisplay();
             calculateWireGauge();
+
+            const affectedFolder = findItemByName(folderToAddName);
+            if (affectedFolder) {
+                const newController = findLoadSourceFolder(affectedFolder.name);
+                if (!newController && detachedChildHadAbycControl) {
+                    affectedFolder.wireGaugeData = {
+                        ...(affectedFolder.wireGaugeData || {}),
+                        useAbycRecommendation: false,
+                        abycControlledBy: null
+                    };
+                }
+                computeAndStoreWireGaugeForFolder(affectedFolder, { readAbycFromDom: false });
+            }
         }
 
         function populateAddLoadDropdown() {
@@ -4243,7 +4379,9 @@
                     expanded: item.expanded, 
                     notes: item.notes || '', 
                     wireGaugeData: item.wireGaugeData,
-                    addedLoadFolders: JSON.parse(JSON.stringify(item.addedLoadFolders || []))
+                    addedLoadFolders: JSON.parse(JSON.stringify(item.addedLoadFolders || [])),
+                    excludeFromPanel: item.excludeFromPanel || false,
+                    singleRunLengthOnly: item.singleRunLengthOnly || false
                 };
             }
         }
@@ -4255,7 +4393,7 @@
                     mirrorGhostAbove: item.mirrorGhostAbove || false
                 };
             } else if (item.type === 'folder') {
-                return { type: 'folder', id: item.id, name: item.name, children: item.children.map(toObject), notes: item.notes || '', wireGaugeData: item.wireGaugeData, addedLoadFolders: item.addedLoadFolders || [], excludeFromPanel: item.excludeFromPanel || false };
+                return { type: 'folder', id: item.id, name: item.name, children: item.children.map(toObject), notes: item.notes || '', wireGaugeData: item.wireGaugeData, addedLoadFolders: item.addedLoadFolders || [], excludeFromPanel: item.excludeFromPanel || false, singleRunLengthOnly: item.singleRunLengthOnly || false };
             }
         }
 
@@ -4291,7 +4429,7 @@
                     img.src = obj.imageData; drawingImg.src = obj.drawingData;
                 } else if (obj.type === 'folder') {
                     Promise.all(obj.children.map(fromObject)).then(resolvedChildren => {
-                        resolve({ type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [], excludeFromPanel: obj.excludeFromPanel || false });
+                        resolve({ type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [], excludeFromPanel: obj.excludeFromPanel || false, singleRunLengthOnly: obj.singleRunLengthOnly || false });
                     }).catch(reject);
                 }
             });
@@ -4528,7 +4666,7 @@
                             const gaugeKey = `${item.wireGaugeData.result} (${voltage}V ${voltageType})${abycTag}`;
                             const length = item.wireGaugeData.length || 0;
                             
-                            wireGaugeTotals[gaugeKey] = (wireGaugeTotals[gaugeKey] || 0) + (length * 2);
+                            wireGaugeTotals[gaugeKey] = (wireGaugeTotals[gaugeKey] || 0) + getEffectiveCircuitLength(length, item);
 
                             const fuseSize = getFuseSize(item.wireGaugeData.amps);
                              if (fuseSize !== 'N/A') {
@@ -4791,10 +4929,11 @@
 
                     let panelInfoHTML = `
                         <h5>Data Panel Info</h5>
-                        <p><strong>Calculation Total:</strong> ${folderTotals.redTotal.toFixed(2)} ft (${(folderTotals.redTotal * 2).toFixed(2)} ft incl. return)</p>
+                        <p><strong>Calculation Total:</strong> ${getLengthSummaryHTML(folderTotals.redTotal, item)}</p>
                         <p><strong>Total Load:</strong> ${totalWatts.toFixed(2)} W (${totalAmps.toFixed(2)} A @ ${voltage}V)</p>
                         <p><span style="font-size: 12px; color: #4b5563;">(SF: ${(totalAmps * safetyFactorMultiplier).toFixed(2)}A)</span></p>
-                        <p><strong>Exclude From Panel:</strong> ${item.excludeFromPanel ? 'Yes' : 'No'}</p>`;
+                        <p><strong>Exclude From Panel:</strong> ${item.excludeFromPanel ? 'Yes' : 'No'}</p>
+                        <p><strong>Single Run Length Only:</strong> ${item.singleRunLengthOnly ? 'Yes' : 'No'}</p>`;
                     if (item.addedLoadFolders && item.addedLoadFolders.length > 0) {
                         panelInfoHTML += `<p><strong>Added Loads:</strong> ${item.addedLoadFolders.join(', ')}</p>`;
                     }
@@ -4804,6 +4943,9 @@
                     if (item.wireGaugeData && item.wireGaugeData.abycRecommendedResult) {
                         panelInfoHTML += `<p><strong>ABYC Recommended Gauge:</strong> ${item.wireGaugeData.abycRecommendedResult}</p>`;
                         panelInfoHTML += `<p><strong>Use ABYC Recommendation:</strong> ${item.wireGaugeData.useAbycRecommendation ? 'Yes' : 'No'}</p>`;
+                        if (item.wireGaugeData.abycControlledBy) {
+                            panelInfoHTML += `<p><strong>ABYC Controlled By:</strong> ${item.wireGaugeData.abycControlledBy}</p>`;
+                        }
                     }
 
                     let leftCalcHTML = '<p><strong>Wire Gauge Calculation:</strong> Not calculated</p>';
@@ -4814,7 +4956,9 @@
                         const voltageDrop = systemVoltage * dropPercent;
                         const protectionInfo = getProtectionDeviceInfo(amps);
                         const protectionAmps = protectionInfo.size || amps;
-                        const circularMils = (10.75 * protectionAmps * (length * 2)) / voltageDrop;
+                        const effectiveLength = getEffectiveCircuitLength(length, item);
+                        const circuitLengthMultiplier = getCircuitLengthMultiplier(item);
+                        const circularMils = (10.75 * protectionAmps * effectiveLength) / voltageDrop;
                         let safetyFactorStep = '';
                         if (safetyFactor > 1.0 && originalAmps !== undefined) {
                             safetyFactorStep = `<li><strong>Safety Factor (1.20 for non-120V circuits)</strong><br>I' = ${originalAmps.toFixed(2)}A × ${safetyFactor} = ${amps.toFixed(2)}A</li>`;
@@ -4828,6 +4972,9 @@
                             const baseResult = calculatorRecommendedResult || result;
                             abycOverrideNote = `<li><strong>ABYC Override Applied</strong><br>Using ABYC recommendation as final gauge: <strong>${result}</strong> (calculator result: ${baseResult}).</li>`;
                         }
+                        if (item.wireGaugeData.abycControlledBy) {
+                            abycOverrideNote += `<li><strong>ABYC Setting Source</strong><br>This run inherits ABYC selection from <strong>${item.wireGaugeData.abycControlledBy}</strong>.</li>`;
+                        }
                         leftCalcHTML = `
                             <h4>Wire Gauge Calculation (based on a ${systemVoltage}V system)</h4>
                             <ol>
@@ -4836,7 +4983,7 @@
                                 ${toleranceNote}
                                 ${abycOverrideNote}
                                 <li><strong>Protection Size Used (I)</strong><br>I = ${protectionAmps.toFixed(2)}A</li>
-                                <li><strong>Circular Mils (CM)</strong> = (K x I x L x 2) / E<br>CM = (10.75 x ${protectionAmps.toFixed(2)}A x ${length.toFixed(2)}ft x 2) / ${voltageDrop.toFixed(2)}V = <strong>${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM</strong></li>
+                                <li><strong>Circular Mils (CM)</strong> = (K x I x L x ${circuitLengthMultiplier}) / E<br>CM = (10.75 x ${protectionAmps.toFixed(2)}A x ${length.toFixed(2)}ft x ${circuitLengthMultiplier}) / ${voltageDrop.toFixed(2)}V = <strong>${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM</strong></li>
                                 <li><strong>Result:</strong> The required ${circularMils.toLocaleString(undefined, {maximumFractionDigits: 0})} CM corresponds to a final recommendation of <strong>${result}</strong>.</li>
                             </ol>`;
                     }
