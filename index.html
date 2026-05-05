@@ -40,6 +40,14 @@
             overflow: hidden;
             text-overflow: ellipsis;
             flex-shrink: 0;
+            cursor: pointer;
+            user-select: none;
+            border-radius: 6px;
+            padding: 2px 4px;
+            margin-left: -4px;
+        }
+        #project-title:hover {
+            background-color: #f3f4f6;
         }
         #sidebar > h3 {
            flex-shrink: 0;
@@ -187,15 +195,28 @@
         #workspace {
             position: relative;
             flex: 1;
+            min-width: 0;
             margin: 0 20px;
             background: #ffffff;
-            width: 800px;
+            width: auto;
             height: 100%;
             border-radius: 12px;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
             overflow: hidden;
         }
-        #workspace canvas {
+        #workspace.view-middle-panning {
+            cursor: grabbing !important;
+        }
+        #canvas-stack {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 800px;
+            height: 600px;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+        #canvas-stack canvas {
             position: absolute;
             top: 0;
             left: 0;
@@ -203,8 +224,9 @@
             border-radius: 8px;
             width: 800px;
             height: 600px;
+            image-rendering: auto;
         }
-        #guideline-input, #guideline-measure-display {
+        #guideline-input, #measure-distance-input, #guideline-measure-display {
             position: absolute;
             z-index: 5000;
             padding: 6px;
@@ -218,7 +240,7 @@
             pointer-events: none;
             user-select: none;
         }
-        #guideline-input {
+        #guideline-input, #measure-distance-input {
             width: 80px;
             pointer-events: auto;
             font-weight: normal;
@@ -590,6 +612,56 @@
             font-weight: 500;
             cursor: pointer;
         }
+        #modal-new-project-actions {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        #new-project-modal-discard-btn,
+        #new-project-modal-cancel-btn {
+            background-color: #6b7280;
+        }
+        #new-project-modal-save-btn {
+            background-color: #2563eb;
+        }
+        #modal-load-actions {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        #load-modal-load-btn {
+            background-color: #ea580c;
+        }
+        #modal-confirm-actions {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        #modal-generic-cancel-btn,
+        #load-modal-cancel-btn {
+            background-color: #6b7280;
+        }
+        #load-modal-save-first-btn {
+            background-color: #2563eb;
+        }
+        #symbol-edit-modal button.danger-confirm {
+            background-color: #dc2626;
+        }
+        #modal-project-name-container label {
+            display: block;
+            margin-bottom: 6px;
+        }
+        #modal-project-name-input {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
         #panel-capacity-warning {
             background-color: #fef2f2;
             color: #991b1b;
@@ -880,12 +952,11 @@
 </head>
 <body>
     <div id="sidebar">
-        <h2 id="project-title">Untitled Project</h2>
+        <h2 id="project-title" title="Double-click to rename">Untitled Project</h2>
         <h3>Layers</h3>
         <ul id="layers-list"></ul>
         <div id="sidebar-bottom-controls">
             <div id="operation-buttons">
-                <button id="copy-paste-selected">Copy</button>
                 <button id="delete-selected">Delete</button>
             </div>
             <div style="display: flex; gap: 8px; margin-top: 12px; flex-shrink: 0;">
@@ -908,7 +979,9 @@
     <div id="workspace">
         <div id="active-folder-display"></div>
         <div id="folder-view-container"></div>
-        <canvas id="grid-canvas" width="800" height="600"></canvas>
+        <div id="canvas-stack">
+            <canvas id="grid-canvas" width="1600" height="1200"></canvas>
+        </div>
         <div id="toolbars-container">
             <div id="color-toolbar" class="toolbar-panel">
                  <div id="colors">
@@ -928,7 +1001,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M15 3H9C6.24 3 4 5.24 4 8v11h16V8c0-2.76-2.24-5-5-5zm-3 2h2v2h-2V5z m-2 12H5v-2h2v2zm0-4H5v-2h2v2zm0-4H5V7h2v2zm4 8H9v-2h2v2zm0-4H9v-2h2v2zm0-4H9V7h2v2zm4 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V7h2v2zm4 8h-2v-2h2v2zm0-4h-2v-2h2v2z" />
                     </svg>
                 </button>
-                <button id="guideline-mode" title="Guideline">
+                <button id="guideline-mode" title="Guideline Tool: Click to set a start point. Move Left/Right for Vertical or Up/Down for Horizontal. Type a positive distance in inches and press Enter, or click to lock at cursor. Right-click to finish. Next dimension starts from the last line.">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3.75v16.5m16.5-16.5v16.5M3.75 12h16.5m-16.5 0h16.5M12 3.75v16.5m0-16.5v16.5" />
                     </svg>
@@ -948,13 +1021,9 @@
                 </button>
                 <button class="symbol-btn" data-symbol-type="outlet" title="Outlet">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke-width="1.5" stroke="currentColor" viewBox="0 0 24 24">
-                       <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 4.5h15v15h-15z M12 6.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11z M9 9.5h-1v2h1z m8 0h-1v2h1z m-4.5 4a1.5 1.5 0 11-3 0 1.5 1.5 0 013 0z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M8 7h8v11H8V7M10 11.5v3M10.7 11.5v3M13.3 11.5v3M14 11.5v3M12 16.85v2.15" />
                     </svg>
-                    <span class="symbol-default-label" id="label-outlet">--</span>
-                </button>
-                <button class="symbol-btn" data-symbol-type="buttonSwitch" title="Button Switch">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
-                    <span class="symbol-default-label" id="label-buttonSwitch">--</span>
+                    <span class="symbol-default-label" id="label-outlet">20A</span>
                 </button>
                 <button class="symbol-btn" data-symbol-type="usb" title="USB Port">
                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
@@ -964,7 +1033,8 @@
                 </button>
                 <button class="symbol-btn" data-symbol-type="ledStrip" title="LED Strip Light">
                     <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-                       <path stroke-linecap="round" stroke-linejoin="round" d="M3 10h18v4H3zm1 1h2v2H4zm3 0h2v2H7zm3 0h2v2h-2zm3 0h2v2h-2zm3 0h2v2h-2zm-9-4h1v2H7zm2 0h1v2H9zm2 0h1v2h-1zm2 0h1v2h-1zm-6 8h1v2H7zm2 0h1v2H9zm2 0h1v2h-1zm2 0h1v2h-1z" />
+                        <rect x="4.75" y="8" width="14.5" height="11" />
+                        <text x="12" y="15.1" text-anchor="middle" font-family="Arial, Helvetica, sans-serif" font-size="7" font-weight="700" fill="currentColor" stroke="none">LED</text>
                     </svg>
                     <span class="symbol-default-label" id="label-ledStrip">--</span>
                 </button>
@@ -989,8 +1059,8 @@
             </div>
 
             <div id="calibration-input-container" style="display: none;">
-                <label for="calibration-value-input">Length in Feet:</label>
-                <input type="number" id="calibration-value-input" step="0.1">
+                <label for="calibration-value-input">Length (inches):</label>
+                <input type="number" id="calibration-value-input" step="0.0625" placeholder="e.g. 120">
             </div>
             <div id="custom-appliance-container" style="display: none;">
                 <label for="custom-appliance-name-input">Appliance Name:</label>
@@ -1010,9 +1080,9 @@
             <div id="outlet-rating-container" style="display: none;">
                 <label>Rating:</label>
                 <div id="outlet-rating-toggle">
-                    <input type="radio" id="rating-15a" name="outlet-rating" value="15" checked>
+                    <input type="radio" id="rating-15a" name="outlet-rating" value="15">
                     <label for="rating-15a">15A</label>
-                    <input type="radio" id="rating-20a" name="outlet-rating" value="20">
+                    <input type="radio" id="rating-20a" name="outlet-rating" value="20" checked>
                     <label for="rating-20a">20A</label>
                     <input type="radio" id="rating-30a" name="outlet-rating" value="30">
                     <label for="rating-30a">30A</label>
@@ -1031,6 +1101,24 @@
             <div id="text-note-container" style="display: none;">
                 <label for="text-note-input">Note:</label>
                 <input type="text" id="text-note-input">
+            </div>
+            <div id="modal-project-name-container" style="display: none;">
+                <label for="modal-project-name-input">Project name</label>
+                <input type="text" id="modal-project-name-input" autocomplete="off" spellcheck="false">
+            </div>
+            <div id="modal-new-project-actions">
+                <button type="button" id="new-project-modal-save-btn">Save project first…</button>
+                <button type="button" id="new-project-modal-discard-btn">Discard &amp; start fresh</button>
+                <button type="button" id="new-project-modal-cancel-btn">Cancel</button>
+            </div>
+            <div id="modal-load-actions">
+                <button type="button" id="load-modal-save-first-btn">Save current project first…</button>
+                <button type="button" id="load-modal-load-btn">Continue to load without saving</button>
+                <button type="button" id="load-modal-cancel-btn">Cancel</button>
+            </div>
+            <div id="modal-confirm-actions">
+                <button type="button" id="modal-generic-confirm-btn">OK</button>
+                <button type="button" id="modal-generic-cancel-btn">Cancel</button>
             </div>
             <button id="save-modal-value-btn">Save</button>
         </div>
@@ -1118,6 +1206,7 @@
         <h3>Settings</h3>
         <label><input type="checkbox" id="ghost-toggle" checked> Show Ghost Lines</label>
         <label><input type="checkbox" id="snap-toggle" checked> Snap to Grid</label>
+        <label><input type="checkbox" id="show-grid-toggle" checked> Show Grid</label>
         <label><input type="checkbox" id="show-values-toggle" checked> Show Symbol Values</label>
         <label><input type="checkbox" id="show-measurements-toggle" checked> Show Measurements</label>
         <label><input type="checkbox" id="show-guidelines-toggle" checked> Show Guidelines</label>
@@ -1167,10 +1256,10 @@
         const guidelineModeBtn = document.getElementById('guideline-mode');
         const ghostToggle = document.getElementById('ghost-toggle');
         const snapToggle = document.getElementById('snap-toggle'); 
+        const showGridToggle = document.getElementById('show-grid-toggle');
         const showValuesToggle = document.getElementById('show-values-toggle');
         const showMeasurementsToggle = document.getElementById('show-measurements-toggle');
         const showGuidelinesToggle = document.getElementById('show-guidelines-toggle');
-        const copyPasteSelectedBtn = document.getElementById('copy-paste-selected');
         const deleteSelectedBtn = document.getElementById('delete-selected');
         const newProjectBtn = document.getElementById('new-project');
         const saveProjectBtn = document.getElementById('save-project');
@@ -1180,6 +1269,7 @@
         const cursorPreview = document.getElementById('cursor-preview');
         const gridCanvas = document.getElementById('grid-canvas'); 
         const gridCtx = gridCanvas.getContext('2d');
+        const canvasStack = document.getElementById('canvas-stack');
         const folderSelect = document.getElementById('folder-select');
         const excludeFromPanelCheckbox = document.getElementById('exclude-from-panel-checkbox');
         const singleRunLengthCheckbox = document.getElementById('single-run-length-checkbox');
@@ -1240,6 +1330,7 @@
         const batchCommonFileList = document.getElementById('batch-common-file-list');
 
         let projectName = "Untitled Project";
+        let modalNameResolveToken = null;
         let lastProjectFileHandle = null;
         let placingSymbolType = null;
         let moveSymbolMode = false;
@@ -1248,13 +1339,53 @@
         let isDraggingSymbol = false;
         let symbolDragOffsetX = 0;
         let symbolDragOffsetY = 0;
-        let symbolDefaultValues = {
-            outlet: { rating: 15 },
+        const DEFAULT_SYMBOL_DEFAULTS = Object.freeze({
+            outlet: { rating: 20 },
             extraLength: { length: 5 },
             puckLight: { value: 3, unit: 'W' },
             usb: { value: 10, unit: 'A' },
             ledStrip: { inches: '', wattsPerMeter: 9.6 }
-        };
+        });
+
+        function normalizeOutletRating(r) {
+            const n = parseInt(String(r ?? ''), 10);
+            if (n === 15 || n === 20 || n === 30) return n;
+            return DEFAULT_SYMBOL_DEFAULTS.outlet.rating;
+        }
+
+        function mergeSymbolDefaults(raw) {
+            const incoming = raw && typeof raw === 'object' ? raw : {};
+            return {
+                outlet: {
+                    rating: normalizeOutletRating(incoming.outlet?.rating)
+                },
+                extraLength: {
+                    length: typeof incoming.extraLength?.length === 'number' && !Number.isNaN(incoming.extraLength.length)
+                        ? incoming.extraLength.length
+                        : DEFAULT_SYMBOL_DEFAULTS.extraLength.length
+                },
+                puckLight: {
+                    value: typeof incoming.puckLight?.value === 'number' && !Number.isNaN(incoming.puckLight.value)
+                        ? incoming.puckLight.value
+                        : DEFAULT_SYMBOL_DEFAULTS.puckLight.value,
+                    unit: incoming.puckLight?.unit === 'A' ? 'A' : 'W'
+                },
+                usb: {
+                    value: typeof incoming.usb?.value === 'number' && !Number.isNaN(incoming.usb.value)
+                        ? incoming.usb.value
+                        : DEFAULT_SYMBOL_DEFAULTS.usb.value,
+                    unit: incoming.usb?.unit === 'W' ? 'W' : 'A'
+                },
+                ledStrip: {
+                    inches: incoming.ledStrip?.inches != null ? String(incoming.ledStrip.inches) : DEFAULT_SYMBOL_DEFAULTS.ledStrip.inches,
+                    wattsPerMeter: typeof incoming.ledStrip?.wattsPerMeter === 'number' && !Number.isNaN(incoming.ledStrip.wattsPerMeter)
+                        ? incoming.ledStrip.wattsPerMeter
+                        : DEFAULT_SYMBOL_DEFAULTS.ledStrip.wattsPerMeter
+                }
+            };
+        }
+
+        let symbolDefaultValues = mergeSymbolDefaults(null);
         let placingSymbolData = null;
 
         let items = [];
@@ -1268,10 +1399,10 @@
         let dataPanelItem = null;
         let showGhost = true;
         let isSnapping = true;
+        let showGrid = true;
         let showSymbolValues = true;
         let showMeasurements = true;
         let showGuidelines = true;
-        let copiedItems = [];
         let idCounter = 0;
         let shouldScrollToBottom = false;
         let draggedItem = null;
@@ -1289,16 +1420,117 @@
         let guidelineDeleteMode = false;
         let guidelineToolState = {};
         let highlightedGuidelines = [];
+        let measureToolState = { isTyping: false, lastSnap: null, lastEvent: null };
 
-        const WIDTH = 800;
-        const HEIGHT = 600;
+        const LEGACY_CANVAS_WIDTH = 800;
+        const LEGACY_CANVAS_HEIGHT = 600;
+        const WIDTH = 1600;
+        const HEIGHT = 1200;
+        const CANVAS_COORD_SCALE = WIDTH / LEGACY_CANVAS_WIDTH;
+
+        function canvasLw(lineWidthStored) {
+            const base = lineWidthStored != null ? Number(lineWidthStored) : currentSize;
+            return Math.max(0.125, base * CANVAS_COORD_SCALE);
+        }
+
+        function canvasPx(legacyPixels) {
+            return legacyPixels * CANVAS_COORD_SCALE;
+        }
+
+        function readSavedWorkspace(projectRoot) {
+            const w = projectRoot?.workspace?.width;
+            const h = projectRoot?.workspace?.height;
+            if (typeof w === 'number' && w > 0 && typeof h === 'number' && h > 0)
+                return { width: w, height: h };
+            return { width: LEGACY_CANVAS_WIDTH, height: LEGACY_CANVAS_HEIGHT };
+        }
+
+        function migrateSerializedLayer(layerObj, sx, sy) {
+            if (!layerObj || typeof layerObj !== 'object') return;
+
+            (layerObj.paths || []).forEach(path => {
+                (path.points || []).forEach(pt => {
+                    if (typeof pt.x === 'number') pt.x *= sx;
+                    if (typeof pt.y === 'number') pt.y *= sy;
+                });
+            });
+
+            (layerObj.symbols || []).forEach(s => {
+                if (typeof s.x === 'number') s.x *= sx;
+                if (typeof s.y === 'number') s.y *= sy;
+                if (typeof s.x1 === 'number') s.x1 *= sx;
+                if (typeof s.y1 === 'number') s.y1 *= sy;
+            });
+
+            (layerObj.measurements || []).forEach(m => {
+                if (m.p1) {
+                    if (typeof m.p1.x === 'number') m.p1.x *= sx;
+                    if (typeof m.p1.y === 'number') m.p1.y *= sy;
+                }
+                if (m.p2) {
+                    if (typeof m.p2.x === 'number') m.p2.x *= sx;
+                    if (typeof m.p2.y === 'number') m.p2.y *= sy;
+                }
+                if (typeof m.offset === 'number') {
+                    if (m.orientation === 'horizontal') m.offset *= sy;
+                    else if (m.orientation === 'vertical') m.offset *= sx;
+                    else m.offset *= sx;
+                }
+            });
+
+            (layerObj.guidelines || []).forEach(g => {
+                if (typeof g.position !== 'number') return;
+                if (g.orientation === 'vertical') g.position *= sx;
+                else g.position *= sy;
+            });
+
+            if (layerObj.guidelineOrigin && typeof layerObj.guidelineOrigin === 'object') {
+                const go = layerObj.guidelineOrigin;
+                if (typeof go.x === 'number') go.x *= sx;
+                if (typeof go.y === 'number') go.y *= sy;
+            }
+
+            if (layerObj.scale != null && typeof layerObj.scale === 'number' && Number.isFinite(layerObj.scale))
+                layerObj.scale /= sx;
+        }
+
+        function migrateSerializedTreeNode(item, sx, sy) {
+            if (!item || typeof item !== 'object') return;
+            if (item.type === 'layer') migrateSerializedLayer(item, sx, sy);
+            else if (item.type === 'folder' && Array.isArray(item.children))
+                item.children.forEach(ch => migrateSerializedTreeNode(ch, sx, sy));
+        }
+
+        function migrateSerializedProjectIfNeeded(projectItemsArray, workspaceSize) {
+            if (!projectItemsArray || !Array.isArray(projectItemsArray) || !workspaceSize) return;
+            const sx = WIDTH / workspaceSize.width;
+            const sy = HEIGHT / workspaceSize.height;
+            if (!Number.isFinite(sx) || !Number.isFinite(sy)) return;
+            if (Math.abs(sx - 1) < 1e-6 && Math.abs(sy - 1) < 1e-6) return;
+            projectItemsArray.forEach(node => migrateSerializedTreeNode(node, sx, sy));
+        }
+
+        const VIEW_ZOOM_MIN = 0.25;
+        const VIEW_ZOOM_MAX = 4;
+        const VIEW_WHEEL_ZOOM_FACTOR = 1.08;
+        const MIDDLE_MOUSE_DOUBLE_MS = 450;
+        const VIEW_FIT_PADDING_PX = 20;
+
+        let viewTx = 0;
+        let viewTy = 0;
+        let viewScale = 1;
+        let viewPanningMiddle = false;
+        let viewPanGrabClientX = 0;
+        let viewPanGrabClientY = 0;
+        let viewPanStartTx = 0;
+        let viewPanStartTy = 0;
+        let lastMiddleMouseDownStamp = 0;
 
         const svgIcons = {
             puckLight: { path: 'M12 3v2.25m6.364.386l-1.591 1.591M21 12h-2.25m-.386 6.364l-1.591-1.591M12 18.75V21m-4.773-4.227l-1.591 1.591M5.25 12H3m4.227-4.773L5.636 5.636M15.75 12a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0z', size: 24 },
-            outlet: { path: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM9 8v4h2V8H9zm6 0v4h2V8h-2zm-3 5a2 2 0 00-2 2h4a2 2 0 00-2-2z', size: 24 },
-            buttonSwitch: { path: 'M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z', size: 24 },
+            outlet: { path: 'M8 7h8v11H8V7M10 11.5v3M10.7 11.5v3M13.3 11.5v3M14 11.5v3M12 16.85v2.15', size: 24 },
             usb: { path: 'M4 8a2 2 0 012-2h12a2 2 0 012 2v8a2 2 0 01-2-2H6a2 2 0 01-2-2V8zm4 4.5h1.5v1H8zm3 0h1.5v1h-1.5zm3 0h1.5v1h-1.5zm3 0h1.5v1h-1.5z', size: 24 },
-            ledStrip: { path: 'M2 9h20v6H2zM4 11h3v2H4zm4 0h3v2H8zm4 0h3v2h-3zm4 0h3v2h-3zm-9-4h1v2H7zm2 0h1v2H9zm2 0h1v2h-1zm2 0h1v2h-1zm-6 8h1v2H7zm2 0h1v2H9zm2 0h1v2h-1zm2 0h1v2h-1z', size: 24 },
+            ledStrip: { path: 'M4.75 8h14.5v11H4.75V8z', size: 24 },
             customDevice: { path: 'M11 21H21V9H11V21Z M12 11H20 M16 17C17.1046 17 18 16.1046 18 15C18 13.8954 17.1046 13 16 13C14.8954 13 14 13.8954 14 15C14 16.1046 14.8954 17 16 17Z M13 3H19V9H13V3Z M17 4H18V8H17V4Z M3 12H9V18H3V12Z M4 14H8 M4 18V20 M8 18V20', size: 24},
             extraLength: { path: 'M12 6v12m6-6H6', size: 24 },
             textNote: { path: '', size: 0 }
@@ -1368,6 +1600,30 @@
             return (isNegative ? "-" : "") + result.trim();
         }
 
+        function formatFractionInches(decimalInches) {
+            if (isNaN(decimalInches)) return '0"';
+            const neg = decimalInches < 0;
+            let v = Math.abs(decimalInches);
+            let whole = Math.floor(v);
+            let sixteenths = Math.round((v - whole) * 16);
+            if (sixteenths === 16) {
+                whole += 1;
+                sixteenths = 0;
+            }
+            let fractionStr = '';
+            if (sixteenths > 0) {
+                let num = sixteenths;
+                let den = 16;
+                while (num % 2 === 0) {
+                    num /= 2;
+                    den /= 2;
+                }
+                fractionStr = ` ${num}/${den}`;
+            }
+            const body = fractionStr !== '' ? `${whole}${fractionStr}` : `${whole}`;
+            return (neg ? '-' : '') + `${body}"`;
+        }
+
         colorsDiv.querySelectorAll('.color-swatch').forEach(swatch => {
             swatch.addEventListener('click', () => {
                 colorsDiv.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('selected'));
@@ -1383,6 +1639,9 @@
         function updateButtonStates() {
             if (mode !== 'guideline') {
                 exitGuidelineTool();
+            }
+            if (mode !== 'measure') {
+                removeMeasureDistInput();
             }
 
             document.querySelectorAll('.toolbar-panel button').forEach(btn => btn.classList.remove('active'));
@@ -1452,25 +1711,23 @@
         
         guidelineModeBtn.addEventListener('click', () => {
             if (globalScale === null) {
-                alert('Please calibrate the drawing before using guidelines.');
+                showCustomModal({
+                    type: 'info',
+                    title: 'Calibration required',
+                    message: 'Please calibrate the drawing before using guidelines.'
+                });
                 return;
             }
+            currentMeasurement = null;
             mode = 'guideline';
             guidelineDeleteMode = false;
-            guidelineToolState = {};
+            guidelineToolState = { isTyping: false, isActive: false, previewOrientation: null, startPoint: null };
             placingSymbolType = null;
             moveSymbolMode = false;
             deleteSymbolMode = false;
             selectedSymbol = null;
             workspace.classList.remove('placing-symbol-mode', 'move-symbols-mode', 'delete-symbols-mode');
             updateSymbolToolbar();
-            if (activeLayer && !activeLayer.guidelineOrigin) {
-                showCustomModal({
-                    type: 'info',
-                    title: 'Guideline Tool',
-                    message: '1. Click anywhere to set your 0,0 Base Point.\n2. Move your mouse to naturally choose Horizontal or Vertical.\n3. Type a number to set a guideline at that distance.\n\nPositive numbers go Right / Up.\nNegative numbers go Left / Down.\n\nDouble-click the canvas to reset your Base Point.'
-                });
-            }
             updateButtonStates();
         });
         guidelineModeBtn.addEventListener('dblclick', () => {
@@ -1487,6 +1744,10 @@
 
         ghostToggle.addEventListener('change', () => { showGhost = ghostToggle.checked; renderLayers(); });
         snapToggle.addEventListener('change', () => { isSnapping = snapToggle.checked; });
+        showGridToggle.addEventListener('change', () => {
+            showGrid = showGridToggle.checked;
+            renderLayers();
+        });
         showValuesToggle.addEventListener('change', () => {
             showSymbolValues = showValuesToggle.checked;
             getFlatLayers().forEach(redrawLayer);
@@ -1500,20 +1761,37 @@
             if(activeLayer) redrawLayer(activeLayer);
         });
 
-        copyPasteSelectedBtn.addEventListener('click', () => {
-            const allSelected = getAllSelected();
-            if (allSelected.length === 0) return;
-            copiedItems = allSelected.map(duplicateItem);
-            shouldScrollToBottom = true;
-            copiedItems.forEach(newItem => { items.push(newItem); });
-            deselectAll();
-            renderLayers();
-            activateButton(copyPasteSelectedBtn);
-        });
-
-        deleteSelectedBtn.addEventListener('click', () => { 
-            deleteSelected();
-            checkPanelCapacityAndWarn();
+        deleteSelectedBtn.addEventListener('click', () => {
+            const selected = getAllSelected();
+            if (selected.length === 0) {
+                showCustomModal({
+                    type: 'info',
+                    title: 'Nothing selected',
+                    message: 'Select one or more folders or layers (Ctrl/Cmd+click), then click Delete.'
+                });
+                return;
+            }
+            const folders = selected.filter(i => i.type === 'folder');
+            const layers = selected.filter(i => i.type === 'layer');
+            let summary;
+            if (folders.length === 0 && layers.length === 1) {
+                summary = `layer "${layers[0].name}"`;
+            } else if (layers.length === 0 && folders.length === 1) {
+                summary = `folder "${folders[0].name}" and everything inside it`;
+            } else {
+                const bits = [];
+                if (folders.length) bits.push(`${folders.length} folder${folders.length !== 1 ? 's' : ''}`);
+                if (layers.length) bits.push(`${layers.length} layer${layers.length !== 1 ? 's' : ''}`);
+                summary = bits.join(' and ');
+            }
+            showCustomModal({
+                type: 'confirm',
+                title: 'Confirm delete',
+                message: `Delete ${summary}?\n\nThis cannot be undone.`,
+                confirmLabel: 'Delete',
+                confirmDanger: true,
+                onConfirm: () => deleteSelected()
+            });
         });
         
         imageUpload.addEventListener('change', async (e) => {
@@ -1528,19 +1806,36 @@
         });
 
         newProjectBtn.addEventListener('click', () => {
-            if (items.length > 0 && window.confirm("Do you want to save the current project before creating a new one?")) {
-                saveProject();
+            if (items.length === 0) {
+                clearProject();
+                return;
             }
-            clearProject();
+            showCustomModal({
+                type: 'newProject',
+                title: 'Create new project?',
+                message: 'Your current project has folders or layers. Save it first, discard everything and start fresh, or cancel to keep working.'
+            });
         });
 
         saveProjectBtn.addEventListener('click', saveProject);
-        loadProjectBtn.addEventListener('click', () => loadFile.click());
+        loadProjectBtn.addEventListener('click', () => {
+            if (items.length === 0) {
+                loadFile.value = '';
+                loadFile.click();
+                return;
+            }
+            showCustomModal({
+                type: 'loadProjectGuard',
+                title: 'Load project file?',
+                message: 'You have folders or layers in the current project. Save first if you want a copy, load another file without saving (replacing what is open now), or cancel.'
+            });
+        });
         loadFile.addEventListener('change', loadProject);
         previewBtn.addEventListener('click', previewReport);
         exportPdfBtn.addEventListener('click', () => exportProject('pdf'));
         
         settingsBtn.addEventListener('click', () => {
+            showGridToggle.checked = showGrid;
             settingsModal.style.display = 'block';
         });
         settingsModalCloseBtn.addEventListener('click', () => {
@@ -1552,15 +1847,22 @@
             }
         });
         document.getElementById('recalibrate-btn').addEventListener('click', () => {
-            if (!confirm('This will clear the current calibration so you can draw a new one. Continue?')) return;
-            globalScale = null;
-            getFlatLayers().forEach(l => l.scale = null);
             settingsModal.style.display = 'none';
-            mode = 'calibrate';
-            updateButtonStates();
-            showCustomModal({ type: 'info', message: 'Calibration reset. Click two points on your drawing to set a new scale.' });
-            updateDataPanel();
-            drawGrid();
+            showCustomModal({
+                type: 'confirm',
+                title: 'Reset calibration?',
+                message: 'This will clear the current calibration so you can draw a new one.',
+                confirmLabel: 'Continue',
+                onConfirm: () => {
+                    globalScale = null;
+                    getFlatLayers().forEach(l => l.scale = null);
+                    mode = 'calibrate';
+                    updateButtonStates();
+                    showCustomModal({ type: 'info', title: 'Calibration', message: 'Calibration reset. Click two points on your drawing to set a new scale.' });
+                    updateDataPanel();
+                    drawGrid();
+                }
+            });
         });
 
         document.getElementById('circuit-type').addEventListener('change', calculateWireGauge);
@@ -1613,14 +1915,34 @@
                 redo();
             }
             if (e.key === 'Escape') {
+                if (mode === 'measure' && measureToolState.isTyping) {
+                    removeMeasureDistInput();
+                    e.preventDefault();
+                    return;
+                }
+                if (mode === 'measure' && currentMeasurement) {
+                    currentMeasurement = null;
+                    if (activeLayer) redrawLayer(activeLayer);
+                    e.preventDefault();
+                    return;
+                }
                 if (mode === 'guideline') {
                     exitGuidelineTool();
                     mode = 'draw';
                     updateButtonStates();
                 }
             }
-            if (mode === 'guideline' && activeLayer && activeLayer.guidelineOrigin && !guidelineToolState.isTyping && !guidelineDeleteMode) {
-                if ((e.key >= '0' && e.key <= '9') || e.key === '.' || e.key === '-') {
+            if (mode === 'measure' && activeLayer && globalScale !== null && currentMeasurement && !measureDeleteMode && !measureToolState.isTyping) {
+                const canTypeStep1 = currentMeasurement.step === 1 && currentMeasurement.preview && currentMeasurement.preview.orientation;
+                const canTypeStep2 = currentMeasurement.step === 2;
+                if ((canTypeStep1 || canTypeStep2) && ((e.key >= '0' && e.key <= '9') || e.key === '.')) {
+                    e.preventDefault();
+                    createMeasureDistInput(e.key, currentMeasurement.step === 1 ? 'Span (in)' : 'Offset (in)');
+                }
+            }
+            if (mode === 'guideline' && activeLayer && guidelineToolState.isActive && guidelineToolState.previewOrientation && !guidelineToolState.isTyping && !guidelineDeleteMode) {
+                if ((e.key >= '0' && e.key <= '9') || e.key === '.') {
+                    e.preventDefault();
                     createGuidelineInput(e.key);
                 }
             }
@@ -1643,7 +1965,7 @@
                     };
 
                     if (symbolType === 'outlet') {
-                        placingSymbolData.rating = symbolDefaultValues.outlet.rating || 15;
+                        placingSymbolData.rating = normalizeOutletRating(symbolDefaultValues.outlet?.rating);
                         startPlacing();
                         return;
                     }
@@ -1723,7 +2045,7 @@
                 const startPlacingAfterEdit = () => {
                     placingSymbolData = {};
                     if (symbolType === 'outlet') {
-                        placingSymbolData.rating = symbolDefaultValues.outlet.rating || 15;
+                        placingSymbolData.rating = normalizeOutletRating(symbolDefaultValues.outlet?.rating);
                     } else if (symbolType === 'extraLength') {
                          placingSymbolData.length = symbolDefaultValues.extraLength.length || 1;
                     }
@@ -1799,6 +2121,11 @@
         saveModalValueBtn.addEventListener('click', saveSymbolEditHandler);
         
         modalCloseBtn.addEventListener('click', () => {
+            if (modalNameResolveToken) {
+                modalNameResolveToken(null);
+                modalNameResolveToken = null;
+            }
+            resetModalAuxiliaryPanels();
             symbolEditModal.style.display = 'none';
             if (selectedSymbol) {
                 selectedSymbol = null;
@@ -1811,7 +2138,7 @@
             
             // Clean up info modal if it was open
             document.getElementById('info-message-container').style.display = 'none';
-            document.getElementById('calibration-input-container').innerHTML = `<label for="calibration-value-input">Length in Feet:</label><input type="number" id="calibration-value-input" step="0.1">`;
+            document.getElementById('calibration-input-container').innerHTML = `<label for="calibration-value-input">Length (inches):</label><input type="number" id="calibration-value-input" step="0.0625" placeholder="e.g. 120">`;
         });
         
         const handleModalEnter = (e) => {
@@ -1826,6 +2153,7 @@
                 handleModalEnter(e);
             }
         });
+        document.getElementById('modal-project-name-input').addEventListener('keydown', handleModalEnter);
         symbolValueInput.addEventListener('keydown', handleModalEnter);
         customApplianceNameInput.addEventListener('keydown', handleModalEnter);
         extraLengthInput.addEventListener('keydown', handleModalEnter);
@@ -1949,7 +2277,11 @@
         batchNextBtn.addEventListener('click', () => {
             const names = batchFolderNamesInput.value.split('\n').map(name => name.trim()).filter(name => name);
             if (names.length === 0) {
-                alert('Please enter at least one folder name.');
+                showCustomModal({
+                    type: 'info',
+                    title: 'Folder names',
+                    message: 'Please enter at least one folder name.'
+                });
                 return;
             }
 
@@ -2161,9 +2493,98 @@
             projectTitleElement.textContent = projectName;
         }
 
+        function applyViewTransform() {
+            if (!canvasStack) return;
+            canvasStack.style.transform = `translate(${viewTx}px, ${viewTy}px) scale(${viewScale})`;
+        }
+
+        function resetDrawingViewToFit() {
+            if (!workspace || !canvasStack || !activeLayer) return;
+            const pad = VIEW_FIT_PADDING_PX;
+            const w = workspace.clientWidth - pad * 2;
+            const h = workspace.clientHeight - pad * 2;
+            if (w <= 0 || h <= 0) return;
+            // Use CSS layout size of #canvas-stack (matches internal 4:3 buffer aspect; not WIDTH/HEIGHT bitmap pixels).
+            const stackW = LEGACY_CANVAS_WIDTH;
+            const stackH = LEGACY_CANVAS_HEIGHT;
+            let s = Math.min(w / stackW, h / stackH);
+            s = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, s));
+            viewScale = s;
+            viewTx = pad + (w - stackW * s) / 2;
+            viewTy = pad + (h - stackH * s) / 2;
+            applyViewTransform();
+        }
+
+        function zoomDrawingViewAtClientPoint(clientX, clientY, factor) {
+            if (!workspace || !canvasStack || !activeLayer) return;
+            const wr = workspace.getBoundingClientRect();
+            const relX = clientX - wr.left;
+            const relY = clientY - wr.top;
+            const wx = (relX - viewTx) / viewScale;
+            const wy = (relY - viewTy) / viewScale;
+            let newScale = viewScale * factor;
+            newScale = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, newScale));
+            if (Math.abs(newScale - viewScale) < 1e-9) return;
+            viewTx = relX - wx * newScale;
+            viewTy = relY - wy * newScale;
+            viewScale = newScale;
+            applyViewTransform();
+        }
+
+        function setupWorkspacePanZoom() {
+            if (!canvasStack) return;
+
+            canvasStack.addEventListener('wheel', (e) => {
+                if (!activeLayer || (dataPanelItem && dataPanelItem.type === 'folder')) return;
+                if (!canvasStack.contains(e.target)) return;
+                e.preventDefault();
+                const zoomIn = e.deltaY < 0;
+                zoomDrawingViewAtClientPoint(e.clientX, e.clientY, zoomIn ? VIEW_WHEEL_ZOOM_FACTOR : (1 / VIEW_WHEEL_ZOOM_FACTOR));
+            }, { passive: false, capture: true });
+
+            canvasStack.addEventListener('mousedown', (e) => {
+                if (e.button !== 1) return;
+                if (!activeLayer || (dataPanelItem && dataPanelItem.type === 'folder')) return;
+                if (!canvasStack.contains(e.target)) return;
+                const now = Date.now();
+                if (now - lastMiddleMouseDownStamp < MIDDLE_MOUSE_DOUBLE_MS) {
+                    e.preventDefault();
+                    lastMiddleMouseDownStamp = 0;
+                    viewPanningMiddle = false;
+                    workspace.classList.remove('view-middle-panning');
+                    resetDrawingViewToFit();
+                    return;
+                }
+                lastMiddleMouseDownStamp = now;
+                e.preventDefault();
+                viewPanningMiddle = true;
+                viewPanGrabClientX = e.clientX;
+                viewPanGrabClientY = e.clientY;
+                viewPanStartTx = viewTx;
+                viewPanStartTy = viewTy;
+                workspace.classList.add('view-middle-panning');
+            }, true);
+
+            document.addEventListener('mousemove', (e) => {
+                if (!viewPanningMiddle) return;
+                viewTx = viewPanStartTx + (e.clientX - viewPanGrabClientX);
+                viewTy = viewPanStartTy + (e.clientY - viewPanGrabClientY);
+                applyViewTransform();
+            });
+
+            document.addEventListener('mouseup', (e) => {
+                if (e.button !== 1) return;
+                if (viewPanningMiddle) {
+                    viewPanningMiddle = false;
+                    workspace.classList.remove('view-middle-panning');
+                }
+            });
+        }
+
         function clearProject() {
             clearWorkspaceViews();
             items = [];
+            activeFolder = null;
             projectName = "Untitled Project";
             updateProjectTitle();
             layerCounter = 1;
@@ -2171,18 +2592,39 @@
             isDrawing = false;
             activeLayer = null;
             dataPanelItem = null;
-            copiedItems = [];
             idCounter = 0;
             currentPath = null;
             selectedPoint = null;
             globalScale = null;
-            symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
+            symbolDefaultValues = mergeSymbolDefaults(null);
             currentMeasurement = null;
             breakerPanelConfig = null;
+            viewTx = 0;
+            viewTy = 0;
+            viewScale = 1;
+            if (canvasStack) applyViewTransform();
             gridCtx.clearRect(0, 0, WIDTH, HEIGHT);
             updateAddLoadButtonText(0);
             updateSymbolDefaultLabels();
+
+            mode = 'calibrate';
+            drawDeleteMode = false;
+            measureDeleteMode = false;
+            guidelineDeleteMode = false;
+            guidelineToolState = { isTyping: false, isActive: false, previewOrientation: null, startPoint: null };
+            selectedSymbol = null;
+            workspace.classList.remove('placing-symbol-mode', 'move-symbols-mode', 'delete-symbols-mode');
+            highlightedGuidelines = [];
+            placingSymbolData = {};
+            updateSymbolToolbar();
+            updateButtonStates();
+            drawGrid();
             renderLayers();
+            showCustomModal({
+                type: 'info',
+                title: 'New project',
+                message: 'Calibration was reset. Select a layer with your plan, then click two points on the image to set scale before drawing or measuring.'
+            });
         }
         
         function addLayer(file, targetArray = items) {
@@ -2195,10 +2637,15 @@
                         imageCanvas.width = WIDTH;
                         imageCanvas.height = HEIGHT;
                         const imageCtx = imageCanvas.getContext('2d');
-                        const scale = Math.min(WIDTH / img.width, HEIGHT / img.height);
-                        const x = (WIDTH - img.width * scale) / 2;
-                        const y = (HEIGHT - img.height * scale) / 2;
-                        imageCtx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                        imageCtx.imageSmoothingEnabled = true;
+                        imageCtx.imageSmoothingQuality = 'high';
+                        const nw = img.naturalWidth || img.width;
+                        const nh = img.naturalHeight || img.height;
+                        // Contain within layer buffer; centered (uses natural size so EXIF/orientation decode is correct).
+                        const scale = Math.min(WIDTH / nw, HEIGHT / nh);
+                        const x = (WIDTH - nw * scale) / 2;
+                        const y = (HEIGHT - nh * scale) / 2;
+                        imageCtx.drawImage(img, x, y, nw * scale, nh * scale);
 
                         const drawingCanvas = document.createElement('canvas');
                         drawingCanvas.width = WIDTH;
@@ -2212,11 +2659,11 @@
                         const layer = {
                             type: 'layer', id, name: layerName, imageCanvas, drawingCanvas, selected: false, 
                             paths: [], scale: globalScale, undoStack: [], redoStack: [], symbols: [], 
-                            measurements: [], guidelines: [], guidelineOrigin: null, mirrorGhostAbove: false
+                            measurements: [], guidelines: [], guidelineOrigin: null,                             mirrorGhostAbove: false
                         };
 
-                        workspace.insertBefore(layer.imageCanvas, gridCanvas);
-                        workspace.insertBefore(layer.drawingCanvas, gridCanvas);
+                        canvasStack.insertBefore(layer.imageCanvas, gridCanvas);
+                        canvasStack.insertBefore(layer.drawingCanvas, gridCanvas);
                         attachCanvasEvents(layer);
                         targetArray.push(layer);
                         shouldScrollToBottom = true;
@@ -2257,12 +2704,174 @@
             return { x: snappedX, y: snappedY };
         }
 
+        /** Perpendicular distance (canvas px) for snap-to, hover highlight, and delete—same value keeps behavior consistent. */
+        function guidelineLineProximityPx() {
+            return canvasPx(5);
+        }
+
+        /** Closest guideline to the pointer within `threshold` (by perpendicular distance). */
+        function findClosestGuidelineHit(canvasX, canvasY, layer, threshold) {
+            if (!layer?.guidelines?.length) return null;
+            let best = null;
+            let bestDist = Infinity;
+            for (let i = 0; i < layer.guidelines.length; i++) {
+                const g = layer.guidelines[i];
+                const dist = g.orientation === 'horizontal'
+                    ? Math.abs(canvasY - g.position)
+                    : Math.abs(canvasX - g.position);
+                if (dist < threshold && dist < bestDist) {
+                    bestDist = dist;
+                    best = { guideline: g, index: i };
+                }
+            }
+            return best;
+        }
+
+        /** Snap pointer to existing guidelines when within guidelineLineProximityPx(). */
+        function guidelineSnapXY(canvasX, canvasY, layer) {
+            if (!layer?.guidelines?.length || !showGuidelines) {
+                return { x: canvasX, y: canvasY, usedGuideX: false, usedGuideY: false };
+            }
+            const snapThreshold = guidelineLineProximityPx();
+            let verticalPos = null, bestDx = snapThreshold + 1;
+            let horizontalPos = null, bestDy = snapThreshold + 1;
+            for (const g of layer.guidelines) {
+                if (g.orientation === 'vertical') {
+                    const d = Math.abs(canvasX - g.position);
+                    if (d < bestDx && d < snapThreshold) {
+                        bestDx = d;
+                        verticalPos = g.position;
+                    }
+                } else {
+                    const d = Math.abs(canvasY - g.position);
+                    if (d < bestDy && d < snapThreshold) {
+                        bestDy = d;
+                        horizontalPos = g.position;
+                    }
+                }
+            }
+            return {
+                x: verticalPos ?? canvasX,
+                y: horizontalPos ?? canvasY,
+                usedGuideX: verticalPos !== null,
+                usedGuideY: horizontalPos !== null
+            };
+        }
+
+        /** Visible guidelines attract the point first; 2-inch grid applies only on axes not on a guideline. Used by measure and guideline placement. */
+        function snapPointToGuidelinesThenGrid(canvasX, canvasY, layer) {
+            const g = guidelineSnapXY(canvasX, canvasY, layer);
+            let x = g.x;
+            let y = g.y;
+            if (!isSnapping || globalScale === null) return { x, y };
+            const gridSpacingPixels = (1 / 6) / globalScale;
+            if (!g.usedGuideX) x = Math.round(x / gridSpacingPixels) * gridSpacingPixels;
+            if (!g.usedGuideY) y = Math.round(y / gridSpacingPixels) * gridSpacingPixels;
+            return { x, y };
+        }
+
+        function inchesToCanvasPixels(inches) {
+            if (globalScale === null || isNaN(inches)) return NaN;
+            return (inches / 12) / globalScale;
+        }
+
+        function removeMeasureDistInput() {
+            const el = document.getElementById('measure-distance-input');
+            if (el && el.parentElement === workspace) workspace.removeChild(el);
+            measureToolState.isTyping = false;
+        }
+
+        function applyTypedMeasurement(lengthInches) {
+            if (!activeLayer || globalScale === null || !currentMeasurement || measureDeleteMode || isNaN(lengthInches) || lengthInches < 0) {
+                removeMeasureDistInput();
+                return;
+            }
+            const snaps = measureToolState.lastSnap;
+            const pix = inchesToCanvasPixels(lengthInches);
+            if (isNaN(pix)) return;
+
+            if (currentMeasurement.step === 1) {
+                const o = currentMeasurement.preview && currentMeasurement.preview.orientation;
+                if (!o) return;
+                const ref = snaps || currentMeasurement.p1;
+                saveState(activeLayer);
+                const p1 = currentMeasurement.p1;
+                if (o === 'horizontal') {
+                    const dir = ref.x >= p1.x ? 1 : -1;
+                    currentMeasurement.p2 = { x: p1.x + dir * pix, y: p1.y };
+                } else {
+                    const dir = ref.y >= p1.y ? 1 : -1;
+                    currentMeasurement.p2 = { x: p1.x, y: p1.y + dir * pix };
+                }
+                currentMeasurement.orientation = o;
+                currentMeasurement.step = 2;
+                currentMeasurement.preview = {};
+                redrawLayer(activeLayer);
+            } else if (currentMeasurement.step === 2) {
+                const { p1, p2, orientation } = currentMeasurement;
+                const ref = snaps || p2 || p1;
+                saveState(activeLayer);
+                let offset;
+                if (orientation === 'horizontal') {
+                    const dir = ref.y >= p1.y ? 1 : -1;
+                    offset = dir * pix;
+                } else {
+                    const dir = ref.x >= p1.x ? 1 : -1;
+                    offset = dir * pix;
+                }
+                if (!activeLayer.measurements) activeLayer.measurements = [];
+                activeLayer.measurements.push({ p1: { ...p1 }, p2: { ...p2 }, orientation, offset });
+                currentMeasurement = null;
+                redrawLayer(activeLayer);
+            }
+            removeMeasureDistInput();
+        }
+
+        function createMeasureDistInput(firstChar = '', placeholder = 'Dist (in)') {
+            removeMeasureDistInput();
+            measureToolState.isTyping = true;
+
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.id = 'measure-distance-input';
+            input.placeholder = placeholder;
+            input.step = 0.1;
+            input.min = 0;
+            input.value = firstChar;
+
+            workspace.appendChild(input);
+
+            if (measureToolState.lastEvent) {
+                const rect = workspace.getBoundingClientRect();
+                input.style.left = `${measureToolState.lastEvent.clientX - rect.left + 15}px`;
+                input.style.top = `${measureToolState.lastEvent.clientY - rect.top - 30}px`;
+            } else {
+                input.style.left = '50%';
+                input.style.top = '50%';
+            }
+
+            input.focus();
+
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    if (input.value !== '') {
+                        applyTypedMeasurement(parseFloat(input.value));
+                    }
+                }
+            });
+            input.addEventListener('blur', () => {
+                if (input.parentElement === workspace) workspace.removeChild(input);
+                measureToolState.isTyping = false;
+            });
+        }
+
         function drawGrid() {
             gridCtx.clearRect(0, 0, WIDTH, HEIGHT);
-            if (globalScale === null) { return; }
+            if (!showGrid || globalScale === null) { return; }
             const gridSpacingPixels = (1/6) / globalScale; // 2 inches
             gridCtx.strokeStyle = 'rgba(128, 128, 128, 0.5)';
-            gridCtx.lineWidth = 0.5;
+            gridCtx.lineWidth = canvasLw(0.5);
             for (let x = 0; x <= WIDTH; x += gridSpacingPixels) {
                 gridCtx.beginPath();
                 gridCtx.moveTo(x, 0);
@@ -2290,6 +2899,34 @@
                 layer.undoStack.shift();
             }
         }
+
+        function resetModalAuxiliaryPanels() {
+            saveModalValueBtn.style.display = '';
+            symbolEditModal.style.width = '';
+            const infoWrap = document.getElementById('info-message-container');
+            if (infoWrap) infoWrap.style.display = 'none';
+
+            const panels = [
+                ['modal-new-project-actions', ['new-project-modal-save-btn', 'new-project-modal-discard-btn', 'new-project-modal-cancel-btn']],
+                ['modal-load-actions', ['load-modal-save-first-btn', 'load-modal-load-btn', 'load-modal-cancel-btn']],
+                ['modal-confirm-actions', ['modal-generic-confirm-btn', 'modal-generic-cancel-btn']]
+            ];
+            panels.forEach(([panelId, btnIds]) => {
+                const p = document.getElementById(panelId);
+                if (p) {
+                    p.style.display = 'none';
+                    btnIds.forEach((id) => {
+                        const b = document.getElementById(id);
+                        if (b) {
+                            b.onclick = null;
+                            b.classList.remove('danger-confirm');
+                        }
+                    });
+                }
+            });
+            const pnc = document.getElementById('modal-project-name-container');
+            if (pnc) pnc.style.display = 'none';
+        }
         
         function showCustomModal(options) {
             const { type, title, symbolType, layer, message, onSave, symbol } = options;
@@ -2297,13 +2934,18 @@
             const modalTitle = document.getElementById('modal-title');
             const calibInputContainer = document.getElementById('calibration-input-container');
 
+            if (modalNameResolveToken) {
+                modalNameResolveToken(null);
+                modalNameResolveToken = null;
+            }
             if (activeModalSaveHandler) {
                 saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
                 activeModalSaveHandler = null;
             }
             saveModalValueBtn.removeEventListener('click', saveSymbolEditHandler);
+            resetModalAuxiliaryPanels();
             
-            modalTitle.textContent = title;
+            modalTitle.textContent = title || '';
             saveModalValueBtn.textContent = 'Save';
 
             // Hide all containers by default
@@ -2335,15 +2977,16 @@
 
             } else if (type === 'calibration') {
                 calibInputContainer.style.display = 'block';
-                calibrationValueInput.value = '';
-                focusElement = calibrationValueInput;
+                const calibEl = document.getElementById('calibration-value-input');
+                if (calibEl) calibEl.value = '';
+                focusElement = calibEl;
                 activeModalSaveHandler = () => {
                     const p1 = layer.calibrationPoints[0];
                     const p2 = layer.calibrationPoints[1];
                     const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-                    const length = parseFloat(calibrationValueInput.value);
-                    if (!isNaN(length) && dist > 0) {
-                        globalScale = length / dist;
+                    const lengthInches = parseFloat(document.getElementById('calibration-value-input')?.value ?? '');
+                    if (!isNaN(lengthInches) && dist > 0) {
+                        globalScale = (lengthInches / 12) / dist;
                         getFlatLayers().forEach(l => l.scale = globalScale);
                         drawGrid();
                     }
@@ -2418,7 +3061,7 @@
                 if (type === 'editOutletRating' && symbol && symbol.rating) {
                     document.getElementById(`rating-${symbol.rating}a`).checked = true;
                 } else {
-                    const currentDefaultRating = symbolDefaultValues.outlet?.rating || 15;
+                    const currentDefaultRating = normalizeOutletRating(symbolDefaultValues.outlet?.rating);
                     document.getElementById(`rating-${currentDefaultRating}a`).checked = true;
                 }
 
@@ -2525,6 +3168,109 @@
                     activeModalSaveHandler = null;
                 };
                 saveModalValueBtn.addEventListener('click', activeModalSaveHandler);
+            } else if (type === 'projectName') {
+                modalNameResolveToken = typeof options._nameResolve === 'function' ? options._nameResolve : null;
+                symbolEditModal.style.width = '300px';
+                document.getElementById('modal-project-name-container').style.display = 'block';
+                const nameInp = document.getElementById('modal-project-name-input');
+                nameInp.value = options.initialName ?? '';
+                focusElement = nameInp;
+                saveModalValueBtn.textContent = options.primaryLabel || 'OK';
+
+                activeModalSaveHandler = () => {
+                    const raw = nameInp.value.trim();
+                    if (!raw) return;
+                    const r = modalNameResolveToken;
+                    modalNameResolveToken = null;
+                    symbolEditModal.style.display = 'none';
+                    saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
+                    activeModalSaveHandler = null;
+                    resetModalAuxiliaryPanels();
+                    if (r) r(raw);
+                };
+                saveModalValueBtn.addEventListener('click', activeModalSaveHandler);
+
+            } else if (type === 'confirm') {
+                symbolEditModal.style.width = '320px';
+                saveModalValueBtn.style.display = 'none';
+                if (message) {
+                    document.getElementById('info-message-text').textContent = message;
+                    document.getElementById('info-message-container').style.display = 'block';
+                }
+                document.getElementById('modal-confirm-actions').style.display = 'flex';
+                const okBtn = document.getElementById('modal-generic-confirm-btn');
+                const cancelBtn = document.getElementById('modal-generic-cancel-btn');
+                okBtn.textContent = options.confirmLabel || 'OK';
+                okBtn.classList.toggle('danger-confirm', Boolean(options.confirmDanger));
+
+                const finish = () => {
+                    symbolEditModal.style.display = 'none';
+                    resetModalAuxiliaryPanels();
+                };
+                okBtn.onclick = () => {
+                    finish();
+                    if (typeof options.onConfirm === 'function') options.onConfirm();
+                };
+                cancelBtn.onclick = () => {
+                    finish();
+                    if (typeof options.onCancel === 'function') options.onCancel();
+                };
+
+            } else if (type === 'loadProjectGuard') {
+                symbolEditModal.style.width = '328px';
+                saveModalValueBtn.style.display = 'none';
+                if (message) {
+                    document.getElementById('info-message-text').textContent = message;
+                    document.getElementById('info-message-container').style.display = 'block';
+                }
+                document.getElementById('modal-load-actions').style.display = 'flex';
+
+                const finish = () => {
+                    symbolEditModal.style.display = 'none';
+                    resetModalAuxiliaryPanels();
+                };
+
+                document.getElementById('load-modal-save-first-btn').onclick = async () => {
+                    finish();
+                    await saveProject();
+                    loadFile.value = '';
+                    loadFile.click();
+                };
+                document.getElementById('load-modal-load-btn').onclick = () => {
+                    finish();
+                    loadFile.value = '';
+                    loadFile.click();
+                };
+                document.getElementById('load-modal-cancel-btn').onclick = () => {
+                    finish();
+                };
+
+            } else if (type === 'newProject') {
+                symbolEditModal.style.width = '320px';
+                saveModalValueBtn.style.display = 'none';
+                if (message) {
+                    document.getElementById('info-message-text').textContent = message;
+                    document.getElementById('info-message-container').style.display = 'block';
+                }
+                document.getElementById('modal-new-project-actions').style.display = 'flex';
+
+                const finish = () => {
+                    symbolEditModal.style.display = 'none';
+                    resetModalAuxiliaryPanels();
+                };
+
+                document.getElementById('new-project-modal-save-btn').onclick = async () => {
+                    finish();
+                    const saved = await saveProject();
+                    if (saved) clearProject();
+                };
+                document.getElementById('new-project-modal-discard-btn').onclick = () => {
+                    finish();
+                    clearProject();
+                };
+                document.getElementById('new-project-modal-cancel-btn').onclick = () => {
+                    finish();
+                };
             }
             
             symbolEditModal.style.display = 'block';
@@ -2538,6 +3284,40 @@
                 }, 10);
             }
         }
+
+        function promptProjectDisplayName(opts) {
+            return new Promise((resolve) => {
+                showCustomModal({
+                    type: 'projectName',
+                    title: opts.title,
+                    initialName: opts.initialName ?? '',
+                    primaryLabel: opts.primaryLabel || 'OK',
+                    _nameResolve: resolve
+                });
+            });
+        }
+
+        projectTitleElement.addEventListener('dblclick', (e) => {
+            e.preventDefault();
+            promptProjectDisplayName({
+                title: 'Rename project',
+                primaryLabel: 'Rename',
+                initialName: projectName === 'Untitled Project' ? '' : projectName
+            }).then((entered) => {
+                if (entered == null) return;
+                const t = entered.trim();
+                if (!t) {
+                    showCustomModal({
+                        type: 'info',
+                        title: 'Name required',
+                        message: 'Please enter a project name.'
+                    });
+                    return;
+                }
+                projectName = t;
+                updateProjectTitle();
+            });
+        });
 
         function findClosestMeasurement(layer, x, y) {
             let closest = null;
@@ -2566,16 +3346,40 @@
                 }
             });
 
-            return minDistance < 20 ? closest : null; // 20px click radius
+            return minDistance < canvasPx(20) ? closest : null;
         }
 
         function handleMouseDown(e, layer) {
             if (layer !== activeLayer) return;
+
+            // Uncalibrated: symbol "sentinel" mode (mode === '') or stray symbol flags steal clicks before calibrate runs.
+            if (globalScale === null) {
+                if (mode === '') mode = 'calibrate';
+                if (placingSymbolType || moveSymbolMode || deleteSymbolMode) {
+                    placingSymbolType = null;
+                    placingSymbolData = {};
+                    moveSymbolMode = false;
+                    deleteSymbolMode = false;
+                    updateSymbolToolbar();
+                }
+            }
             
             let { canvasX, canvasY } = getCanvasCoordinates(e);
-            const snapped = getSnappedCoordinates(canvasX, canvasY);
-            canvasX = snapped.x;
-            canvasY = snapped.y;
+            if (mode === 'measure') {
+                const combined = snapPointToGuidelinesThenGrid(canvasX, canvasY, layer);
+                canvasX = combined.x;
+                canvasY = combined.y;
+                measureToolState.lastSnap = { x: canvasX, y: canvasY };
+                measureToolState.lastEvent = e;
+            } else if (mode === 'guideline') {
+                const combined = snapPointToGuidelinesThenGrid(canvasX, canvasY, layer);
+                canvasX = combined.x;
+                canvasY = combined.y;
+            } else {
+                const snapped = getSnappedCoordinates(canvasX, canvasY);
+                canvasX = snapped.x;
+                canvasY = snapped.y;
+            }
             
             // Handle middle and right mouse buttons
             if (e.button === 1) { // Middle mouse button
@@ -2607,6 +3411,21 @@
                     placingSymbolType = null;
                     moveSymbolMode = false;
                     deleteSymbolMode = false;
+                    mode = 'select';
+                    updateButtonStates();
+                    updateDataPanel();
+                    e.preventDefault();
+                    return;
+                } else if (mode === 'guideline') {
+                    exitGuidelineTool();
+                    mode = 'select';
+                    updateButtonStates();
+                    e.preventDefault();
+                    return;
+                } else if (mode === 'measure') {
+                    removeMeasureDistInput();
+                    currentMeasurement = null;
+                    measureDeleteMode = false;
                     mode = 'select';
                     updateButtonStates();
                     updateDataPanel();
@@ -2661,7 +3480,7 @@
                     const defaultVal = symbolDefaultValues[placingSymbolType] || { inches: '', wattsPerMeter: 9.6 };
                     newSymbol.inches = defaultVal.inches;
                     newSymbol.wattsPerMeter = defaultVal.wattsPerMeter;
-                } else {
+                } else if (placingSymbolType === 'puckLight' || placingSymbolType === 'usb') {
                     const defaultVal = symbolDefaultValues[placingSymbolType] || { value: 0, unit: 'W' };
                     newSymbol.value = defaultVal.value;
                     newSymbol.unit = defaultVal.unit;
@@ -2676,7 +3495,7 @@
             }
 
             if (moveSymbolMode || deleteSymbolMode) {
-                const symbolSize = 24;
+                const symbolSize = canvasPx(24);
                 selectedSymbol = layer.symbols.find(s => 
                     canvasX >= s.x - symbolSize / 2 && canvasX <= s.x + symbolSize / 2 &&
                     canvasY >= s.y - symbolSize / 2 && canvasY <= s.y + symbolSize / 2
@@ -2729,7 +3548,7 @@
                 layer.paths.forEach((path) => {
                     path.points.forEach((pt, idx) => {
                         let dist = Math.hypot(pt.x - canvasX, pt.y - canvasY);
-                        if (dist < minDist && dist < 15) {
+                        if (dist < minDist && dist < canvasPx(15)) {
                             minDist = dist;
                             sel = {path, index: idx};
                         }
@@ -2741,7 +3560,7 @@
                 if (!layer.calibrationPoints) layer.calibrationPoints = [];
                 layer.calibrationPoints.push({x: originalCoords.canvasX, y: originalCoords.canvasY});
                 if (layer.calibrationPoints.length === 2) {
-                    showCustomModal({type: 'calibration', title: 'Enter Distance', layer: layer});
+                    showCustomModal({type: 'calibration', title: 'Enter distance (inches)', layer: layer});
                 }
                 redrawLayer(layer);
             } else if (mode === 'measure') {
@@ -2775,6 +3594,7 @@
                         currentMeasurement.orientation = 'vertical';
                     }
                     currentMeasurement.step = 2;
+                    currentMeasurement.preview = {};
                 } else if (currentMeasurement.step === 2) {
                     const {p1, p2, orientation} = currentMeasurement;
                     let offset;
@@ -2792,34 +3612,26 @@
             } else if (mode === 'guideline') {
                 if (guidelineDeleteMode) {
                     if (!activeLayer || !activeLayer.guidelines) return;
-                    let foundLineIndex = -1;
-                    const clickThreshold = 10;
-                    for(let i = 0; i < activeLayer.guidelines.length; i++) {
-                        const g = activeLayer.guidelines[i];
-                        if (g.orientation === 'horizontal' && Math.abs(canvasY - g.position) < clickThreshold) {
-                            foundLineIndex = i; break;
-                        }
-                        if (g.orientation === 'vertical' && Math.abs(canvasX - g.position) < clickThreshold) {
-                            foundLineIndex = i; break;
-                        }
-                    }
-                    if (foundLineIndex !== -1) {
+                    const clickThreshold = guidelineLineProximityPx();
+                    const hit = findClosestGuidelineHit(canvasX, canvasY, activeLayer, clickThreshold);
+                    if (hit) {
                         saveState(activeLayer);
-                        activeLayer.guidelines.splice(foundLineIndex, 1);
+                        activeLayer.guidelines.splice(hit.index, 1);
                         highlightedGuidelines = [];
                         redrawLayer(activeLayer);
                     }
                     return;
                 }
-
-                // If origin doesn't exist, create it
-                if (!layer.guidelineOrigin) {
-                    layer.guidelineOrigin = { x: canvasX, y: canvasY };
+                if (!guidelineToolState.isActive) {
+                    guidelineToolState.isActive = true;
+                    guidelineToolState.startPoint = { x: canvasX, y: canvasY };
+                    guidelineToolState.currentPos = { x: canvasX, y: canvasY };
+                    guidelineToolState.lastEvent = e;
+                    guidelineToolState.previewOrientation = null;
                     redrawLayer(layer);
                     return;
                 }
-                
-                // If we are here, origin exists. Place guideline visually if not typing
+
                 if (!guidelineToolState.isTyping && guidelineToolState.previewOrientation) {
                     createPermanentGuidelineFromPos({x: canvasX, y: canvasY});
                 }
@@ -2851,9 +3663,21 @@
                 return;
             }
 
-            const snapped = getSnappedCoordinates(canvasX, canvasY);
-            canvasX = snapped.x;
-            canvasY = snapped.y;
+            if (mode === 'measure') {
+                const combined = snapPointToGuidelinesThenGrid(canvasX, canvasY, layer);
+                canvasX = combined.x;
+                canvasY = combined.y;
+                measureToolState.lastSnap = { x: canvasX, y: canvasY };
+                measureToolState.lastEvent = e;
+            } else if (mode === 'guideline') {
+                const combined = snapPointToGuidelinesThenGrid(canvasX, canvasY, layer);
+                canvasX = combined.x;
+                canvasY = combined.y;
+            } else {
+                const snapped = getSnappedCoordinates(canvasX, canvasY);
+                canvasX = snapped.x;
+                canvasY = snapped.y;
+            }
             guidelineToolState.lastEvent = e;
 
             if (mode === 'select' && selectedPoint) {
@@ -2901,26 +3725,19 @@
                     y2: canvasY
                 };
                 redrawLayer(layer);
-            } else if (mode === 'guideline' && layer.guidelineOrigin && !guidelineDeleteMode) {
-                
-                // Track mouse movement to lock orientation naturally
-                const dxFromLast = canvasX - (guidelineToolState.lastMouseX || canvasX);
-                const dyFromLast = canvasY - (guidelineToolState.lastMouseY || canvasY);
-                
-                // Only switch if the user moves their mouse decisively in a direction
-                if (Math.abs(dxFromLast) > 2 || Math.abs(dyFromLast) > 2) {
-                    if (Math.abs(dxFromLast) > Math.abs(dyFromLast)) {
-                        guidelineToolState.previewOrientation = 'vertical'; // Moving Left/Right sets vertical line
-                    } else if (Math.abs(dyFromLast) > Math.abs(dxFromLast)) {
-                        guidelineToolState.previewOrientation = 'horizontal'; // Moving Up/Down sets horizontal line
+            } else if (mode === 'guideline' && guidelineToolState.isActive && guidelineToolState.startPoint && !guidelineDeleteMode) {
+                const dxFromStart = canvasX - guidelineToolState.startPoint.x;
+                const dyFromStart = canvasY - guidelineToolState.startPoint.y;
+
+                if (Math.abs(dxFromStart) > 2 || Math.abs(dyFromStart) > 2) {
+                    if (Math.abs(dxFromStart) >= Math.abs(dyFromStart)) {
+                        guidelineToolState.previewOrientation = 'vertical';
+                    } else {
+                        guidelineToolState.previewOrientation = 'horizontal';
                     }
                 }
 
-                guidelineToolState.lastMouseX = canvasX;
-                guidelineToolState.lastMouseY = canvasY;
                 guidelineToolState.currentPos = {x: canvasX, y: canvasY};
-                
-                // Update display label
                 if (!guidelineToolState.isTyping && guidelineToolState.previewOrientation) {
                     let display = document.getElementById('guideline-measure-display');
                     if (!display) {
@@ -2928,31 +3745,27 @@
                         display.id = 'guideline-measure-display';
                         workspace.appendChild(display);
                     }
-                    
-                    let distFeet = 0;
+
+                    let distInches = 0;
                     if (guidelineToolState.previewOrientation === 'vertical') {
-                        distFeet = (canvasX - layer.guidelineOrigin.x) * globalScale;
+                        distInches = Math.abs(canvasX - guidelineToolState.startPoint.x) * globalScale * 12;
                     } else {
-                        distFeet = (layer.guidelineOrigin.y - canvasY) * globalScale;
+                        distInches = Math.abs(guidelineToolState.startPoint.y - canvasY) * globalScale * 12;
                     }
-                    
-                    display.textContent = `${distFeet > 0 ? '+' : ''}${formatFractionFeet(distFeet)}`;
-                    
-                    // Position label next to cursor
+
+                    display.textContent = `${distInches.toFixed(2)}"`;
                     const rect = activeLayer.drawingCanvas.getBoundingClientRect();
                     const clientX = (canvasX / WIDTH * rect.width) + rect.left;
                     const clientY = (canvasY / HEIGHT * rect.height) + rect.top;
-                    
                     display.style.left = `${clientX + window.scrollX + 15}px`;
                     display.style.top = `${clientY + window.scrollY - 30}px`;
                     display.style.display = 'block';
                 }
+
                 redrawLayer(layer);
             }
 
-            if (mode !== 'guideline' || guidelineDeleteMode) {
-                handleGuidelineHover(canvasX, canvasY);
-            }
+            handleGuidelineHover(canvasX, canvasY);
         }
 
         function handleMouseUp(e, layer) {
@@ -2997,11 +3810,7 @@
                 currentMeasurement.preview = {};
                 redrawLayer(layer);
             }
-            if (mode === 'guideline') {
-                const display = document.getElementById('guideline-measure-display');
-                if (display) display.style.display = 'none';
-                redrawLayer(layer);
-            }
+            if (mode === 'guideline') redrawLayer(layer);
             handleGuidelineHover(-1, -1);
         }
 
@@ -3075,14 +3884,6 @@
                 }
             }
 
-            if (mode === 'guideline' && layer.guidelineOrigin && !guidelineDeleteMode) {
-                // Reset origin
-                layer.guidelineOrigin = null;
-                redrawLayer(layer);
-                exitGuidelineTool();
-                return;
-            }
-
             if (layer !== activeLayer || (mode === 'draw' && drawDeleteMode)) return;
             if (currentPath && currentPath.points.length >= 2) {
                 const lastPoint = currentPath.points[currentPath.points.length - 1];
@@ -3141,7 +3942,7 @@
         }
 
         function removePointsNear(layer, x, y) {
-            const radius = 15;
+            const radius = canvasPx(15);
             for (let p = layer.paths.length - 1; p >= 0; p--) {
                 const path = layer.paths[p];
                 for (let i = path.points.length - 1; i >= 0; i--) {
@@ -3155,7 +3956,7 @@
 
         function insertPointsIfLong(path, idx1, idx2) {
             const p1 = path.points[idx1], p2 = path.points[idx2];
-            if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 100) {
+            if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > canvasPx(100)) {
                 path.points.splice(idx1 + 1, 0, {x: p1.x + (p2.x - p1.x) / 2, y: p1.y + (p2.y - p1.y) / 2});
             }
         }
@@ -3170,8 +3971,8 @@
                 if (symbol.type === 'extraLength' && symbol.x1 !== undefined && symbol.y1 !== undefined) {
                     ctx.save();
                     ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
-                    ctx.lineWidth = 2;
-                    ctx.setLineDash([6, 4]);
+                    ctx.lineWidth = canvasLw(2);
+                    ctx.setLineDash([canvasPx(6), canvasPx(4)]);
                     ctx.beginPath();
                     ctx.moveTo(symbol.x1, symbol.y1);
                     ctx.lineTo(symbol.x, symbol.y);
@@ -3180,7 +3981,7 @@
                     // Permanent start point anchor dot
                     ctx.fillStyle = 'rgba(34, 197, 94, 0.8)';
                     ctx.beginPath();
-                    ctx.arc(symbol.x1, symbol.y1, 3, 0, Math.PI * 2);
+                    ctx.arc(symbol.x1, symbol.y1, canvasPx(3), 0, Math.PI * 2);
                     ctx.fill();
                     ctx.restore();
                 }
@@ -3195,13 +3996,16 @@
 
                 if (symbol.type !== 'textNote' && symbol.type !== 'extraLength') {
                     const p = new Path2D(icon.path);
+                    const isize = icon.size * CANVAS_COORD_SCALE;
+                    const ipad = canvasPx(4);
                     if (symbol === selectedSymbol && moveSymbolMode) {
                         ctx.strokeStyle = '#3b82f6';
-                        ctx.lineWidth = 2;
-                        ctx.strokeRect(-icon.size/2 - 4, -icon.size/2 - 4, icon.size + 8, icon.size + 8);
+                        ctx.lineWidth = canvasLw(2);
+                        ctx.strokeRect(-isize / 2 - ipad, -isize / 2 - ipad, isize + 2 * ipad, isize + 2 * ipad);
                     }
                     ctx.save();
                     ctx.translate(-icon.size / 2, -icon.size / 2);
+                    ctx.scale(CANVAS_COORD_SCALE, CANVAS_COORD_SCALE);
                     ctx.strokeStyle = 'white';
                     ctx.lineWidth = 5;
                     ctx.lineCap = 'round';
@@ -3210,8 +4014,21 @@
                     ctx.lineWidth = 1.5;
                     ctx.strokeStyle = "black";
                     ctx.stroke(p);
+                    if (symbol.type === 'ledStrip') {
+                        ctx.font = '700 9px Poppins, Arial, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.textBaseline = 'middle';
+                        const cx = icon.size / 2;
+                        const cy = icon.size / 2;
+                        ctx.lineWidth = 3.5;
+                        ctx.strokeStyle = 'white';
+                        ctx.strokeText('LED', cx, cy);
+                        ctx.lineWidth = 1;
+                        ctx.fillStyle = 'black';
+                        ctx.fillText('LED', cx, cy);
+                    }
                     ctx.restore();
-                    textYOffset = (icon.size / 2) + 14;
+                    textYOffset = isize / 2 + canvasPx(14);
                 }
                 
                 if (symbol.type === 'customDevice' && symbol.customName) {
@@ -3231,10 +4048,10 @@
                     powerText = `${symbol.value}${symbol.unit}`;
                 }
 
-                ctx.font = "12px Poppins";
+                ctx.font = `${Math.round(canvasPx(12))}px Poppins`;
                 ctx.textAlign = "center";
                 ctx.strokeStyle = 'white';
-                ctx.lineWidth = 4;
+                ctx.lineWidth = canvasLw(4);
                 ctx.lineJoin = 'round';
                 ctx.fillStyle = "black";
                 
@@ -3247,7 +4064,7 @@
 
                 if (nameText) {
                     drawTextWithBg(nameText, currentYOffset);
-                    currentYOffset += 14;
+                    currentYOffset += canvasPx(14);
                 }
                 if (otherText) {
                     drawTextWithBg(otherText, currentYOffset);
@@ -3277,15 +4094,15 @@
             ctx.save();
             ctx.strokeStyle = '#0284c7'; // A nice blue for measurements
             ctx.fillStyle = '#0284c7';
-            ctx.lineWidth = 1.5;
-            ctx.font = '14px Poppins';
+            ctx.lineWidth = canvasLw(1.5);
+            ctx.font = `${Math.round(canvasPx(14))}px Poppins`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'bottom';
             
             const bgStroke = (path) => {
                 ctx.save();
                 ctx.strokeStyle = 'white';
-                ctx.lineWidth = 4;
+                ctx.lineWidth = canvasLw(4);
                 ctx.lineCap = 'round';
                 ctx.lineJoin = 'round';
                 ctx.stroke(path);
@@ -3307,25 +4124,27 @@
             ctx.stroke(mainPath);
 
             const dist = Math.hypot(p2.x - p1.x, p2.y - p1.y);
-            const text = formatFractionFeet(dist * globalScale);
+            const distInches = dist * globalScale * 12;
+            const text = formatFractionInches(distInches);
             const textX = m1.x + (m2.x - m1.x) / 2;
             const textY = m1.y + (m2.y - m1.y) / 2;
 
             ctx.strokeStyle = 'white';
-            ctx.lineWidth = 4;
-            ctx.strokeText(text, textX, textY - 5);
-            ctx.fillText(text, textX, textY - 5);
+            ctx.lineWidth = canvasLw(4);
+            ctx.strokeText(text, textX, textY - canvasPx(5));
+            ctx.fillText(text, textX, textY - canvasPx(5));
 
             if (isInProgress) {
                 ctx.fillStyle = 'rgba(2, 132, 199, 0.7)';
+                const pr = canvasPx(5);
                 if (p1) {
                     ctx.beginPath();
-                    ctx.arc(p1.x, p1.y, 5, 0, 2 * Math.PI);
+                    ctx.arc(p1.x, p1.y, pr, 0, 2 * Math.PI);
                     ctx.fill();
                 }
                 if (p2) {
                     ctx.beginPath();
-                    ctx.arc(p2.x, p2.y, 5, 0, 2 * Math.PI);
+                    ctx.arc(p2.x, p2.y, pr, 0, 2 * Math.PI);
                     ctx.fill();
                 }
             }
@@ -3339,15 +4158,15 @@
 
             if (showGuidelines && layer.guidelines) {
                 ctx.save();
-                ctx.lineWidth = 1;
-                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = canvasLw(1);
+                ctx.setLineDash([canvasPx(5), canvasPx(5)]);
                 layer.guidelines.forEach(g => {
                     if (highlightedGuidelines.includes(g.id)) {
                         ctx.strokeStyle = guidelineDeleteMode ? 'rgba(255, 0, 0, 0.9)' : 'rgba(0, 200, 255, 0.9)';
-                        ctx.lineWidth = 2;
+                        ctx.lineWidth = canvasLw(2);
                     } else {
                         ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
-                        ctx.lineWidth = 1;
+                        ctx.lineWidth = canvasLw(1);
                     }
                     ctx.beginPath();
                     if (g.orientation === 'horizontal') {
@@ -3359,42 +4178,16 @@
                     }
                     ctx.stroke();
                     
-                    // Label
-                    ctx.fillStyle = ctx.strokeStyle;
-                    ctx.font = '10px Poppins';
-                    if (g.orientation === 'horizontal' && layer.guidelineOrigin) {
-                        ctx.fillText(`${g.distanceFromOrigin > 0 ? '+' : ''}${formatFractionFeet(g.distanceFromOrigin)}`, layer.guidelineOrigin.x + 5, g.position - 5);
-                    } else if (layer.guidelineOrigin) {
-                        ctx.fillText(`${g.distanceFromOrigin > 0 ? '+' : ''}${formatFractionFeet(g.distanceFromOrigin)}`, g.position + 5, layer.guidelineOrigin.y - 5);
-                    }
                 });
                 ctx.restore();
             }
 
-            // Draw Origin Crosshair
-            if (showGuidelines && layer.guidelineOrigin) {
-                ctx.save();
-                ctx.strokeStyle = 'rgba(0, 100, 255, 0.8)'; 
-                ctx.lineWidth = 1.5;
-                ctx.beginPath();
-                ctx.moveTo(layer.guidelineOrigin.x, 0);
-                ctx.lineTo(layer.guidelineOrigin.x, HEIGHT);
-                ctx.moveTo(0, layer.guidelineOrigin.y);
-                ctx.lineTo(WIDTH, layer.guidelineOrigin.y);
-                ctx.stroke();
-                
-                ctx.fillStyle = 'rgba(0, 100, 255, 0.8)';
-                ctx.font = '12px Poppins';
-                ctx.fillText('0,0', layer.guidelineOrigin.x + 5, layer.guidelineOrigin.y - 5);
-                ctx.restore();
-            }
-
             // Preview Guideline
-            if (mode === 'guideline' && layer.guidelineOrigin && guidelineToolState.previewOrientation && !guidelineToolState.isTyping && !guidelineDeleteMode) {
+            if (mode === 'guideline' && guidelineToolState.isActive && guidelineToolState.previewOrientation && guidelineToolState.currentPos && !guidelineToolState.isTyping && !guidelineDeleteMode) {
                 ctx.save();
                 ctx.strokeStyle = 'rgba(0, 200, 255, 0.5)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([5, 5]);
+                ctx.lineWidth = canvasLw(1);
+                ctx.setLineDash([canvasPx(5), canvasPx(5)]);
                 ctx.beginPath();
                 if (guidelineToolState.previewOrientation === 'horizontal') {
                     ctx.moveTo(0, guidelineToolState.currentPos.y);
@@ -3408,9 +4201,10 @@
             }
             
             layer.paths.forEach(path => {
+                const pw = canvasLw(path.lineWidth);
                 if (path.isX) {
                     ctx.strokeStyle = path.color;
-                    ctx.lineWidth = currentSize;
+                    ctx.lineWidth = pw;
                     ctx.beginPath();
                     ctx.moveTo(path.points[0].x, path.points[0].y);
                     ctx.lineTo(path.points[1].x, path.points[1].y);
@@ -3421,13 +4215,13 @@
                     ctx.stroke();
                 } else if (path.points.length > 0) {
                     ctx.strokeStyle = path.color;
-                    ctx.lineWidth = currentSize;
+                    ctx.lineWidth = pw;
                     ctx.lineCap = 'round';
                     ctx.beginPath();
                     ctx.moveTo(path.points[0].x, path.points[0].y);
                     if (path.points.length === 1) {
                         ctx.fillStyle = path.color;
-                        ctx.arc(path.points[0].x, path.points[0].y, 5, 0, 2 * Math.PI);
+                        ctx.arc(path.points[0].x, path.points[0].y, canvasPx(5), 0, 2 * Math.PI);
                         ctx.fill();
                     } else {
                         for (let i = 1; i < path.points.length; i++) {
@@ -3437,7 +4231,7 @@
                         const lastPoint = path.points[path.points.length - 1];
                         ctx.fillStyle = 'black';
                         ctx.beginPath();
-                        ctx.arc(lastPoint.x, lastPoint.y, 5, 0, 2 * Math.PI);
+                        ctx.arc(lastPoint.x, lastPoint.y, canvasPx(5), 0, 2 * Math.PI);
                         ctx.fill();
                     }
                 }
@@ -3449,8 +4243,8 @@
             if (layer.extraLengthPreview) {
                 ctx.save();
                 ctx.strokeStyle = 'rgba(34, 197, 94, 0.8)';
-                ctx.lineWidth = 2;
-                ctx.setLineDash([6, 4]);
+                ctx.lineWidth = canvasLw(2);
+                ctx.setLineDash([canvasPx(6), canvasPx(4)]);
                 ctx.beginPath();
                 ctx.moveTo(layer.extraLengthPreview.x1, layer.extraLengthPreview.y1);
                 ctx.lineTo(layer.extraLengthPreview.x2, layer.extraLengthPreview.y2);
@@ -3460,7 +4254,7 @@
                 ctx.save();
                 ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
                 ctx.beginPath();
-                ctx.arc(layer.extraLengthPreview.x1, layer.extraLengthPreview.y1, 4, 0, 2*Math.PI);
+                ctx.arc(layer.extraLengthPreview.x1, layer.extraLengthPreview.y1, canvasPx(4), 0, 2*Math.PI);
                 ctx.fill();
                 ctx.restore();
             }
@@ -3470,7 +4264,8 @@
             }
 
             if (mode === 'measure' && currentMeasurement) {
-                const tempMeasurement = { ...currentMeasurement, ...currentMeasurement.preview };
+                const tempMeasurement = { ...currentMeasurement.preview, ...currentMeasurement };
+                delete tempMeasurement.preview;
                 tempMeasurement.offset = tempMeasurement.offset || 0;
                 drawMeasurement(ctx, tempMeasurement, true);
             }
@@ -3479,7 +4274,7 @@
                 ctx.fillStyle = 'rgba(0, 0, 255, 0.5)';
                 layer.paths.forEach(path => path.points.forEach(pt => {
                     ctx.beginPath();
-                    ctx.arc(pt.x, pt.y, 5, 0, 2 * Math.PI);
+                    ctx.arc(pt.x, pt.y, canvasPx(5), 0, 2 * Math.PI);
                     ctx.fill();
                 }));
             }
@@ -3488,7 +4283,7 @@
                 const lastPoint = currentPath.points[currentPath.points.length - 1];
                 if (lastPoint) {
                     ctx.strokeStyle = currentPath.color;
-                    ctx.lineWidth = currentSize;
+                    ctx.lineWidth = canvasLw(currentPath.lineWidth);
                     ctx.lineCap = 'round';
                     ctx.beginPath();
                     ctx.moveTo(lastPoint.x, lastPoint.y);
@@ -3502,10 +4297,10 @@
                 
                 ctx.fillStyle = 'rgba(0, 100, 255, 0.7)';
                 ctx.strokeStyle = 'rgba(0, 100, 255, 0.7)';
-                ctx.lineWidth = 2;
+                ctx.lineWidth = canvasLw(2);
 
                 ctx.beginPath();
-                ctx.arc(p1.x, p1.y, 5, 0, 2 * Math.PI);
+                ctx.arc(p1.x, p1.y, canvasPx(5), 0, 2 * Math.PI);
                 ctx.fill();
 
                 if (layer.calibrationPreview) {
@@ -3515,7 +4310,7 @@
                     ctx.lineTo(p2.x, p2.y);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.arc(p2.x, p2.y, 5, 0, 2 * Math.PI);
+                    ctx.arc(p2.x, p2.y, canvasPx(5), 0, 2 * Math.PI);
                     ctx.fill();
                 }
             }
@@ -4348,44 +5143,6 @@
             }
         }
 
-        function duplicateItem(item) {
-            if (item.type === 'layer') {
-                const newImageCanvas = document.createElement('canvas');
-                newImageCanvas.width = WIDTH;
-                newImageCanvas.height = HEIGHT;
-                newImageCanvas.getContext('2d').drawImage(item.imageCanvas, 0, 0);
-                const newDrawingCanvas = document.createElement('canvas');
-                newDrawingCanvas.width = WIDTH;
-                newDrawingCanvas.height = HEIGHT;
-                const newId = idCounter++;
-                const newLayer = {
-                    type: 'layer', id: newId, name: item.name, imageCanvas: newImageCanvas, drawingCanvas: newDrawingCanvas, selected: false, paths: JSON.parse(JSON.stringify(item.paths)), scale: globalScale, undoStack: [], redoStack: [], symbols: JSON.parse(JSON.stringify(item.symbols)), measurements: JSON.parse(JSON.stringify(item.measurements || [])),
-                    guidelines: JSON.parse(JSON.stringify(item.guidelines || [])),
-                    guidelineOrigin: item.guidelineOrigin ? { ...item.guidelineOrigin } : null,
-                    mirrorGhostAbove: item.mirrorGhostAbove || false
-                };
-                workspace.insertBefore(newImageCanvas, gridCanvas);
-                workspace.insertBefore(newDrawingCanvas, gridCanvas);
-                attachCanvasEvents(newLayer);
-                redrawLayer(newLayer);
-                return newLayer;
-            } else if (item.type === 'folder') {
-                return {
-                    type: 'folder', 
-                    id: idCounter++, 
-                    name: item.name, 
-                    children: item.children.map(duplicateItem), 
-                    selected: false, 
-                    expanded: item.expanded, 
-                    notes: item.notes || '', 
-                    wireGaugeData: item.wireGaugeData,
-                    addedLoadFolders: JSON.parse(JSON.stringify(item.addedLoadFolders || [])),
-                    excludeFromPanel: item.excludeFromPanel || false,
-                    singleRunLengthOnly: item.singleRunLengthOnly || false
-                };
-            }
-        }
-
         function toObject(item) {
             if (item.type === 'layer') {
                 return { 
@@ -4414,6 +5171,9 @@
                                 s.unit = 'W';
                                 delete s.watts;
                             }
+                            if (s.type === 'outlet') {
+                                s.rating = normalizeOutletRating(s.rating);
+                            }
                         });
                     }
 
@@ -4422,9 +5182,16 @@
                         guidelines: obj.guidelines || [], guidelineOrigin: obj.guidelineOrigin || null, mirrorGhostAbove: obj.mirrorGhostAbove || false
                     };
                     let imageLoaded = false, drawingLoaded = false;
+                    const drawDataUrlOntoCanvas = (imageEl, cvs) => {
+                        const c = cvs.getContext('2d');
+                        c.imageSmoothingEnabled = true;
+                        c.imageSmoothingQuality = 'high';
+                        c.clearRect(0, 0, WIDTH, HEIGHT);
+                        c.drawImage(imageEl, 0, 0, WIDTH, HEIGHT);
+                    };
                     const checkDone = () => { if (imageLoaded && drawingLoaded) { attachCanvasEvents(layer); resolve(layer); } };
-                    img.onload = () => { imageCanvas.getContext('2d').drawImage(img, 0, 0); imageLoaded = true; checkDone(); };
-                    drawingImg.onload = () => { drawingCanvas.getContext('2d').drawImage(drawingImg, 0, 0); drawingLoaded = true; checkDone(); };
+                    img.onload = () => { drawDataUrlOntoCanvas(img, imageCanvas); imageLoaded = true; checkDone(); };
+                    drawingImg.onload = () => { drawDataUrlOntoCanvas(drawingImg, drawingCanvas); drawingLoaded = true; checkDone(); };
                     img.onerror = reject; drawingImg.onerror = reject;
                     img.src = obj.imageData; drawingImg.src = obj.drawingData;
                 } else if (obj.type === 'folder') {
@@ -4435,21 +5202,16 @@
             });
         }
 
-        async function saveProject() {
-            const name = prompt("Enter a name for your project:", projectName === "Untitled Project" ? "" : projectName);
-            if (!name) { return; }
-            projectName = name;
-            updateProjectTitle();
-            
+        async function writeProjectFilesToDisk() {
             const projectSaveObject = {
                 projectName: projectName,
                 projectItems: items.map(toObject),
+                workspace: { width: WIDTH, height: HEIGHT },
                 symbolDefaults: symbolDefaultValues,
                 breakerPanel: breakerPanelConfig
             };
             const jsonString = JSON.stringify(projectSaveObject, null, 2);
 
-            // Prefer real file overwrite when the browser supports it.
             if (window.showSaveFilePicker) {
                 const desiredFilename = projectName + '.json';
                 try {
@@ -4469,10 +5231,10 @@
                     await writable.close();
                     lastProjectFileHandle = fileHandle;
                     activateButton(saveProjectBtn);
-                    return;
+                    return true;
                 } catch (error) {
                     if (error && error.name === 'AbortError') {
-                        return;
+                        return false;
                     }
                     console.warn('Save picker failed, falling back to download save.', error);
                 }
@@ -4485,11 +5247,29 @@
             a.click();
             URL.revokeObjectURL(a.href);
             activateButton(saveProjectBtn);
+            return true;
+        }
+
+        async function saveProject() {
+            const entered = await promptProjectDisplayName({
+                title: 'Save project',
+                primaryLabel: 'Continue',
+                initialName: projectName === 'Untitled Project' ? '' : projectName
+            });
+            if (entered == null) return false;
+            const trimmed = entered.trim();
+            if (!trimmed) return false;
+            projectName = trimmed;
+            updateProjectTitle();
+            return writeProjectFilesToDisk();
         }
 
         function loadProject(e) {
             const file = e.target.files[0];
-            if (!file) return;
+            if (!file) {
+                loadFile.value = '';
+                return;
+            }
             const reader = new FileReader();
             reader.onload = async (event) => {
                 try {
@@ -4500,13 +5280,15 @@
                         projectName = loadedData.projectName || "Untitled Project";
                         updateProjectTitle();
                         projectItems = loadedData.projectItems;
-                        symbolDefaultValues = loadedData.symbolDefaults || { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
+                        migrateSerializedProjectIfNeeded(projectItems, readSavedWorkspace(loadedData));
+                        symbolDefaultValues = mergeSymbolDefaults(loadedData.symbolDefaults);
                         breakerPanelConfig = loadedData.breakerPanel || null;
                     } else {
                         projectName = "Untitled Project";
                         updateProjectTitle();
-                        projectItems = loadedData; // Backwards compatibility
-                        symbolDefaultValues = { outlet: { rating: 15 }, extraLength: { length: 5 }, puckLight: { value: 3, unit: 'W' }, usb: { value: 10, unit: 'A' }, ledStrip: { inches: '', wattsPerMeter: 9.6 } };
+                        projectItems = loadedData; // Backwards compatibility — array of folders/layers
+                        migrateSerializedProjectIfNeeded(projectItems, { width: LEGACY_CANVAS_WIDTH, height: LEGACY_CANVAS_HEIGHT });
+                        symbolDefaultValues = mergeSymbolDefaults(null);
                         breakerPanelConfig = null;
                     }
                     
@@ -4515,8 +5297,8 @@
                     
                     const allLoadedLayers = getFlatLayers(items);
                     allLoadedLayers.forEach(layer => {
-                        workspace.insertBefore(layer.imageCanvas, gridCanvas);
-                        workspace.insertBefore(layer.drawingCanvas, gridCanvas);
+                        canvasStack.insertBefore(layer.imageCanvas, gridCanvas);
+                        canvasStack.insertBefore(layer.drawingCanvas, gridCanvas);
                     });
                     
                     const allItems = [];
@@ -4531,10 +5313,18 @@
                     if (foundScale) {
                         globalScale = foundScale;
                         allLoadedLayers.forEach(l => l.scale = globalScale);
-                        alert(`Project loaded successfully. Calibration found and applied.`);
+                        showCustomModal({
+                            type: 'info',
+                            title: 'Project loaded',
+                            message: 'Calibration was found and applied.'
+                        });
                     } else {
                         globalScale = null;
-                        alert('Project loaded successfully, but no calibration data was found. Please calibrate the project.');
+                        showCustomModal({
+                            type: 'info',
+                            title: 'Project loaded',
+                            message: 'No calibration data was found in this file. Please calibrate the project.'
+                        });
                     }
                     
                     if (allLoadedLayers.length > 0) {
@@ -4546,7 +5336,13 @@
                     checkPanelCapacityAndWarn();
                 } catch (error) {
                     console.error('Failed to load project:', error);
-                    alert('Failed to load project. The file might be corrupted or is not a valid project file.');
+                    showCustomModal({
+                        type: 'info',
+                        title: 'Load failed',
+                        message: 'Could not load this file. It may be corrupted or not a valid project file.'
+                    });
+                } finally {
+                    loadFile.value = '';
                 }
             };
             reader.readAsText(file);
@@ -4639,8 +5435,9 @@
         }
 
         function getSymbolFriendlyName(symbolType) {
+            const legacyTitles = { buttonSwitch: 'Button Switch' };
             const btn = document.querySelector(`.symbol-btn[data-symbol-type="${symbolType}"]`);
-            return btn ? btn.title : symbolType;
+            return btn ? btn.title : (legacyTitles[symbolType] || symbolType);
         }
 
         function generateBomData() {
@@ -4726,7 +5523,11 @@
 
         async function generateReportHTML() {
             if (items.length === 0) {
-                alert('No layers or folders to export.');
+                showCustomModal({
+                    type: 'info',
+                    title: 'Nothing to export',
+                    message: 'Add at least one layer or folder before exporting or previewing a report.'
+                });
                 return null;
             }
 
@@ -5063,7 +5864,9 @@
             }
             let { canvasX, canvasY } = getCanvasCoordinates(e);
             const rect = activeLayer.drawingCanvas.getBoundingClientRect();
-            const snapped = getSnappedCoordinates(canvasX, canvasY);
+            const snapped = (mode === 'measure' || mode === 'guideline')
+                ? snapPointToGuidelinesThenGrid(canvasX, canvasY, activeLayer)
+                : getSnappedCoordinates(canvasX, canvasY);
             const clientX = (snapped.x / WIDTH * rect.width) + rect.left;
             const clientY = (snapped.y / HEIGHT * rect.height) + rect.top;
             cursorPreview.style.left = `${clientX + window.scrollX}px`;
@@ -5073,9 +5876,9 @@
 
         function updateCursorPreview() {
             if (!activeLayer) { cursorPreview.style.display = 'none'; return; }
-            const size = (mode === 'draw' && drawDeleteMode) ? 15 : currentSize;
-            cursorPreview.style.width = `${size}px`;
-            cursorPreview.style.height = `${size}px`;
+            const size = canvasPx((mode === 'draw' && drawDeleteMode) ? 15 : currentSize);
+            cursorPreview.style.width = `${Math.max(4, Math.round(size))}px`;
+            cursorPreview.style.height = `${Math.max(4, Math.round(size))}px`;
             cursorPreview.style.background = (mode === 'draw' && drawDeleteMode) ? 'rgba(255, 0, 0, 0.5)' : currentColor;
             cursorPreview.style.opacity = (mode === 'draw' && drawDeleteMode) ? 0.5 : 0.7;
             cursorPreview.style.border = (mode === 'draw' && drawDeleteMode) ? '1px solid red' : '1px solid #1f2937';
@@ -5151,22 +5954,11 @@
 
         function removeCanvases(item) {
             if (item.type === 'layer') {
-                if (workspace.contains(item.imageCanvas)) { workspace.removeChild(item.imageCanvas); }
-                if (workspace.contains(item.drawingCanvas)) { workspace.removeChild(item.drawingCanvas); }
+                if (canvasStack.contains(item.imageCanvas)) { canvasStack.removeChild(item.imageCanvas); }
+                if (canvasStack.contains(item.drawingCanvas)) { canvasStack.removeChild(item.drawingCanvas); }
             } else if (item.type === 'folder') {
                 item.children.forEach(removeCanvases);
             }
-        }
-
-        function deleteItem(item) {
-            const parentInfo = findParent(item);
-            if (!parentInfo) return;
-            removeCanvases(item);
-            parentInfo.parentList.splice(parentInfo.index, 1);
-            if (activeLayer === item) activeLayer = null;
-            if (dataPanelItem === item) dataPanelItem = null;
-            renderLayers();
-            checkPanelCapacityAndWarn();
         }
 
         function deleteSelected() {
@@ -5184,6 +5976,7 @@
             }
             recurse(items);
             renderLayers();
+            checkPanelCapacityAndWarn();
         }
 
         function renameItem(item, li, spanContainer) {
@@ -5390,11 +6183,6 @@
                 downBtn.addEventListener('click', () => moveDown(item));
                 actionsDiv.appendChild(downBtn);
 
-                const deleteBtn = document.createElement('button');
-                deleteBtn.textContent = 'Delete';
-                deleteBtn.addEventListener('click', () => { deleteItem(item); });
-                actionsDiv.appendChild(deleteBtn);
-
                 li.appendChild(infoDiv);
                 li.appendChild(actionsDiv);
                 parentUl.appendChild(li);
@@ -5410,6 +6198,10 @@
         
         function clearWorkspaceViews() {
             Array.from(workspace.children).forEach(child => {
+                if (child.id === 'canvas-stack') {
+                    child.style.display = 'none';
+                    return;
+                }
                 if (child.tagName === 'CANVAS' || child.id === 'toolbars-container' || child.id === 'symbol-edit-modal' || child.id === 'breaker-panel-modal' || child.id === 'batch-setup-modal') {
                     child.style.display = 'none';
                 }
@@ -5481,6 +6273,7 @@
             updateFolderNameDisplay();
 
             if (dataPanelItem && dataPanelItem.type === 'folder') {
+                if (canvasStack) canvasStack.style.display = 'none';
                 return;
             }
 
@@ -5500,6 +6293,7 @@
             });
             
             if (activeLayer) {
+                if (canvasStack) canvasStack.style.display = 'block';
                 activeLayer.imageCanvas.style.display = 'block';
                 activeLayer.drawingCanvas.style.display = 'block';
 
@@ -5521,18 +6315,20 @@
                     prevLayer.drawingCanvas.style.zIndex = parseInt(activeLayer.imageCanvas.style.zIndex) + 1;
                 }
 
-                if(globalScale !== null) {
+                if (globalScale !== null && showGrid) {
                     gridCanvas.style.display = 'block';
                     gridCanvas.style.zIndex = parseInt(activeLayer.imageCanvas.style.zIndex) + 1;
                     drawGrid();
                 } else {
                     gridCanvas.style.display = 'none';
+                    if (globalScale !== null) gridCtx.clearRect(0, 0, WIDTH, HEIGHT);
                 }
                 
                 redrawLayer(activeLayer);
             } else {
                 cursorPreview.style.display = 'none';
                 gridCanvas.style.display = 'none';
+                if (canvasStack) canvasStack.style.display = 'none';
             }
             
             updateDataPanel();
@@ -5556,7 +6352,12 @@
                 activeLayer = itemToSelect;
                 currentPath = null;
                 selectedPoint = null;
+                if (globalScale === null) {
+                    mode = 'calibrate';
+                    updateButtonStates();
+                }
                 renderLayers();
+                requestAnimationFrame(() => resetDrawingViewToFit());
             } else { // It's a folder
                 activeFolder = itemToSelect;
                 activeLayer = null;
@@ -5566,51 +6367,25 @@
         }
         
         function handleGuidelineHover(canvasX, canvasY) {
-            if (!activeLayer || !activeLayer.guidelines || !showGuidelines) return;
-            let foundLine = null;
-            const hoverThreshold = 5;
-            for(const g of activeLayer.guidelines) {
-                if (g.orientation === 'horizontal' && Math.abs(canvasY - g.position) < hoverThreshold) {
-                    foundLine = g;
-                    break;
+            if (canvasX < 0 || canvasY < 0) {
+                if (highlightedGuidelines.length > 0) {
+                    highlightedGuidelines = [];
+                    if (activeLayer) redrawLayer(activeLayer);
                 }
-                if (g.orientation === 'vertical' && Math.abs(canvasX - g.position) < hoverThreshold) {
-                    foundLine = g;
-                    break;
-                }
+                return;
             }
-            
-            const existingDisplay = document.getElementById('guideline-measure-display');
-            
+            if (!activeLayer || !activeLayer.guidelines || !showGuidelines) return;
+            const hoverThreshold = guidelineLineProximityPx();
+            const hit = findClosestGuidelineHit(canvasX, canvasY, activeLayer, hoverThreshold);
+            const foundLine = hit ? hit.guideline : null;
+
             if (foundLine) {
                 highlightedGuidelines = [foundLine.id];
-                
-                if (!guidelineDeleteMode) {
-                    if (!existingDisplay) createGuidelineDisplay();
-                    const display = document.getElementById('guideline-measure-display');
-                    
-                    display.textContent = `${foundLine.distanceFromOrigin > 0 ? '+' : ''}${formatFractionFeet(foundLine.distanceFromOrigin)}`;
-                    
-                    const rect = activeLayer.drawingCanvas.getBoundingClientRect();
-                    const clientX = (canvasX / WIDTH * rect.width) + rect.left;
-                    const clientY = (canvasY / HEIGHT * rect.height) + rect.top;
-
-                    display.style.left = `${clientX + window.scrollX + 15}px`;
-                    display.style.top = `${clientY + window.scrollY - 30}px`;
-                    display.style.display = 'block';
-                } else {
-                    if (existingDisplay) {
-                        workspace.removeChild(existingDisplay);
-                    }
-                }
                 redrawLayer(activeLayer);
             } else {
                 if (highlightedGuidelines.length > 0) {
                     highlightedGuidelines = [];
                     redrawLayer(activeLayer);
-                }
-                if (existingDisplay) {
-                    workspace.removeChild(existingDisplay);
                 }
             }
         }
@@ -5623,27 +6398,23 @@
             if(existingDisplay) workspace.removeChild(existingDisplay);
 
             guidelineToolState.isTyping = false;
+            guidelineToolState.isActive = false;
+            guidelineToolState.previewOrientation = null;
+            guidelineToolState.startPoint = null;
+            guidelineToolState.currentPos = null;
             if(activeLayer) redrawLayer(activeLayer);
         }
         
-        function createGuidelineDisplay() {
-            exitGuidelineTool(); 
-            const display = document.createElement('div');
-            display.id = 'guideline-measure-display';
-            workspace.appendChild(display);
-        }
-
         function createGuidelineInput(firstChar = '') {
             guidelineToolState.isTyping = true;
-            const display = document.getElementById('guideline-measure-display');
-            if(display) display.style.display = 'none';
 
             const input = document.createElement('input');
             input.type = 'number';
             input.id = 'guideline-input';
-            input.placeholder = 'Dist (ft)';
+            input.placeholder = 'Dist (in)';
             input.step = 0.1;
             input.value = firstChar;
+            input.min = 0;
 
             workspace.appendChild(input);
             
@@ -5668,63 +6439,87 @@
             };
             input.addEventListener('keydown', onEnter);
             input.addEventListener('blur', () => { 
-                 exitGuidelineTool();
+                if (input.parentElement === workspace) workspace.removeChild(input);
+                guidelineToolState.isTyping = false;
             });
         }
 
-        function createPermanentGuideline(distanceInFeet) {
-            if (isNaN(distanceInFeet) || !activeLayer || globalScale === null || !activeLayer.guidelineOrigin) {
+        function createPermanentGuideline(distanceInches) {
+            if (isNaN(distanceInches) || distanceInches < 0 || !activeLayer || globalScale === null || !guidelineToolState.startPoint || !guidelineToolState.previewOrientation) {
                 exitGuidelineTool();
                 return;
             }
             saveState(activeLayer);
-            const distanceInPixels = distanceInFeet / globalScale;
+            const distanceInPixels = (distanceInches / 12) / globalScale;
             let newPosition;
-            
+            let direction = 1;
+
             if (guidelineToolState.previewOrientation === 'vertical') {
-                newPosition = activeLayer.guidelineOrigin.x + distanceInPixels;
+                direction = (guidelineToolState.currentPos && guidelineToolState.currentPos.x < guidelineToolState.startPoint.x) ? -1 : 1;
+                newPosition = guidelineToolState.startPoint.x + (direction * distanceInPixels);
             } else {
-                newPosition = activeLayer.guidelineOrigin.y - distanceInPixels;
+                direction = (guidelineToolState.currentPos && guidelineToolState.currentPos.y > guidelineToolState.startPoint.y) ? 1 : -1;
+                newPosition = guidelineToolState.startPoint.y + (direction * distanceInPixels);
             }
             
             activeLayer.guidelines.push({
                 id: idCounter++,
                 orientation: guidelineToolState.previewOrientation,
                 position: newPosition,
-                distanceFromOrigin: distanceInFeet
+                distanceInches: distanceInches,
+                distanceFromOrigin: distanceInches / 12
             });
+            if (guidelineToolState.previewOrientation === 'vertical') {
+                guidelineToolState.startPoint.x = newPosition;
+            } else {
+                guidelineToolState.startPoint.y = newPosition;
+            }
+            guidelineToolState.currentPos = { ...guidelineToolState.startPoint };
             redrawLayer(activeLayer);
-            exitGuidelineTool();
+            const existingInput = document.getElementById('guideline-input');
+            if (existingInput) workspace.removeChild(existingInput);
+            const existingDisplay = document.getElementById('guideline-measure-display');
+            if (existingDisplay) workspace.removeChild(existingDisplay);
+            guidelineToolState.isTyping = false;
         }
 
         function createPermanentGuidelineFromPos(pos) {
-            if (!activeLayer || !activeLayer.guidelineOrigin || globalScale === null) return;
+            if (!activeLayer || !guidelineToolState.startPoint || !guidelineToolState.previewOrientation || globalScale === null) return;
             saveState(activeLayer);
 
             const newId = idCounter++;
-            let newPosition, distFeet;
+            let newPosition, distInches;
 
             if (guidelineToolState.previewOrientation === 'vertical') {
                 newPosition = pos.x;
-                distFeet = (pos.x - activeLayer.guidelineOrigin.x) * globalScale;
+                distInches = Math.abs(pos.x - guidelineToolState.startPoint.x) * globalScale * 12;
+                guidelineToolState.startPoint.x = newPosition;
             } else {
                 newPosition = pos.y;
-                distFeet = (activeLayer.guidelineOrigin.y - pos.y) * globalScale;
+                distInches = Math.abs(guidelineToolState.startPoint.y - pos.y) * globalScale * 12;
+                guidelineToolState.startPoint.y = newPosition;
             }
 
             activeLayer.guidelines.push({
                 id: newId,
                 orientation: guidelineToolState.previewOrientation,
                 position: newPosition,
-                distanceFromOrigin: distFeet
+                distanceInches: distInches,
+                distanceFromOrigin: distInches / 12
             });
+            guidelineToolState.currentPos = { ...guidelineToolState.startPoint };
             
             redrawLayer(activeLayer);
-            exitGuidelineTool();
+            const existingInput = document.getElementById('guideline-input');
+            if (existingInput) workspace.removeChild(existingInput);
+            const existingDisplay = document.getElementById('guideline-measure-display');
+            if (existingDisplay) workspace.removeChild(existingDisplay);
+            guidelineToolState.isTyping = false;
         }
 
     updateSymbolDefaultLabels();
     updateProjectTitle();
+    setupWorkspacePanZoom();
     </script>
 </body>
 </html>
