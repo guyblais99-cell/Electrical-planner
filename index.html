@@ -2582,6 +2582,11 @@
         }
 
         function clearProject() {
+            if (canvasStack) {
+                Array.from(canvasStack.querySelectorAll('canvas')).forEach(c => {
+                    if (c !== gridCanvas) c.remove();
+                });
+            }
             clearWorkspaceViews();
             items = [];
             activeFolder = null;
@@ -5292,6 +5297,11 @@
                         breakerPanelConfig = null;
                     }
                     
+                    if (canvasStack) {
+                        Array.from(canvasStack.querySelectorAll('canvas')).forEach(c => {
+                            if (c !== gridCanvas) c.remove();
+                        });
+                    }
                     clearWorkspaceViews();
                     items = await Promise.all(projectItems.map(fromObject));
                     
