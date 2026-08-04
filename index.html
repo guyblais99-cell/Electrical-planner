@@ -6166,8 +6166,12 @@
                     .print-calc-right h5 { margin: 0 0 8px 0; font-size: 14px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
                     .print-calc-right p { margin: 0 0 6px 0; font-size: 12px; line-height: 1.4; }
                 </style>
-                <h1>Project Report: ${projectName}</h1>
             `;
+
+            const introPage = document.createElement('div');
+            introPage.className = 'print-page';
+            introPage.innerHTML = `<h1>Project Report: ${projectName}</h1>`;
+            reportContainer.appendChild(introPage);
 
             const allFolders = [];
             function collectFolders(list) { list.forEach(item => { if (item.type === 'folder') { allFolders.push(item); collectFolders(item.children); }});}
@@ -6178,7 +6182,7 @@
                 const panelSection = document.createElement('div');
                 panelSection.innerHTML = '<h2 style="margin-top:24px;">Breaker Panel Layout</h2>';
                 panelSection.appendChild(generatePrintableBreakerPanel());
-                reportContainer.appendChild(panelSection);
+                introPage.appendChild(panelSection);
             }
 
             let allFolderSummaries = [];
@@ -6268,29 +6272,9 @@
         }
 
         function splitReportIntoPdfSections(reportElement) {
-            const sections = [];
-            let pendingNodes = [];
-
-            Array.from(reportElement.children).forEach(child => {
-                if (child.tagName === 'STYLE') {
-                    return;
-                }
-                if (child.classList && child.classList.contains('print-page')) {
-                    if (pendingNodes.length > 0) {
-                        sections.push(pendingNodes);
-                        pendingNodes = [];
-                    }
-                    sections.push([child]);
-                    return;
-                }
-                pendingNodes.push(child);
-            });
-
-            if (pendingNodes.length > 0) {
-                sections.push(pendingNodes);
-            }
-
-            return sections;
+            return Array.from(reportElement.children)
+                .filter(child => child.classList && child.classList.contains('print-page'))
+                .map(child => [child]);
         }
 
         async function waitForRenderLayout() {
@@ -6361,25 +6345,27 @@
                     'position: fixed',
                     'left: 0',
                     'top: 0',
-                    'width: 0',
-                    'height: 0',
-                    'overflow: visible',
+                    'width: 1056px',
+                    'min-height: 1px',
+                    'opacity: 0.01',
+                    'background: white',
+                    'overflow: hidden',
                     'pointer-events: none',
-                    'z-index: -1'
+                    'z-index: 2147483646'
                 ].join(';');
 
                 const pageWrapper = document.createElement('div');
                 pageWrapper.style.cssText = [
-                    'position: absolute',
+                    'position: static',
                     'left: 0',
                     'top: 0',
-                    'width: 1056px',
+                    'width: 100%',
                     'min-height: 1px',
                     'padding: 24px',
                     'box-sizing: border-box',
                     'background: white',
                     'color: black',
-                    'z-index: -1'
+                    'z-index: auto'
                 ].join(';');
 
                 if (reportStyle) {
