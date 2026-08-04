@@ -6133,7 +6133,16 @@
                     body { font-family: sans-serif; } 
                     h1 { page-break-after: avoid; padding-bottom: 20px; }
                     .page-break { page-break-before: always; } 
-                    .print-page { page-break-inside: avoid; } 
+                    .print-page {
+                        break-inside: avoid-page;
+                        break-after: page;
+                        page-break-inside: avoid;
+                        page-break-after: always;
+                    } 
+                    .print-page:last-child {
+                        break-after: auto;
+                        page-break-after: auto;
+                    }
                     .print-summary { border: 1px solid #ccc; border-radius: 8px; margin-bottom: 20px; padding: 0 20px 20px 20px; } 
                     .print-summary h3 { margin-top: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; } 
                     .print-summary pre { white-space: pre-wrap; word-wrap: break-word; background-color: #f4f4f4; padding: 10px; border-radius: 4px; }
@@ -6236,7 +6245,8 @@
                     filename:     `${filenameBase}.pdf`,
                     image:        { type: 'jpeg', quality: 0.98 },
                     html2canvas:  { scale: 2 },
-                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' }
+                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'landscape' },
+                    pagebreak:    { mode: ['css', 'legacy'], before: '.print-page.page-break', after: '.print-page' }
                 };
                 html2pdf().set(opt).from(reportElement).save();
             }
