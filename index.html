@@ -6169,7 +6169,7 @@
             `;
 
             const introPage = document.createElement('div');
-            introPage.className = 'print-page';
+            introPage.className = 'print-flow-section';
             introPage.innerHTML = `<h1>Project Report: ${projectName}</h1>`;
             reportContainer.appendChild(introPage);
 
@@ -6179,20 +6179,23 @@
             allFolders.forEach(f => f.isHeaderPrinted = false);
             
             if (breakerPanelConfig) {
-                const panelPage = document.createElement('div');
-                panelPage.className = 'print-page page-break';
-                panelPage.innerHTML = '<h2>Breaker Panel Layout</h2>';
-                panelPage.appendChild(generatePrintableBreakerPanel());
-                reportContainer.appendChild(panelPage);
+                const panelSection = document.createElement('div');
+                panelSection.innerHTML = '<h2 style="margin-top:24px;">Breaker Panel Layout</h2>';
+                panelSection.appendChild(generatePrintableBreakerPanel());
+                introPage.appendChild(panelSection);
             }
 
             let allFolderSummaries = [];
             await generateLayerPages(items, reportContainer, null, allFolderSummaries);
 
             if (allFolderSummaries.length > 0) {
+                const summarySection = document.createElement('div');
+                summarySection.className = 'print-flow-section';
+                summarySection.innerHTML = '<h2>Project Summary</h2>';
                 allFolderSummaries.forEach(summaryData => {
-                    reportContainer.appendChild(summaryData);
+                    summarySection.appendChild(summaryData);
                 });
+                reportContainer.appendChild(summarySection);
             }
 
             const bomData = generateBomData();
@@ -6270,13 +6273,111 @@
 
         function splitReportIntoPdfSections(reportElement) {
             return Array.from(reportElement.children)
-                .filter(child => child.classList && child.classList.contains('print-page'))
-                .map(child => [child]);
+                .filter(child => child.classList && (child.classList.contains('print-page') || child.classList.contains('print-flow-section')))
+                .map(child => ({
+                    mode: child.classList.contains('print-flow-section') ? 'flow' : 'fixed',
+                    node: child
+                }));
         }
 
         async function waitForRenderLayout() {
             await new Promise(requestAnimationFrame);
             await new Promise(requestAnimationFrame);
+        }
+
+        async function renderReportSectionToCanvas(sectionNode, reportStyle) {
+            const pageHost = document.createElement('div');
+            pageHost.style.cssText = [
+                'position: fixed',
+                'left: 0',
+                'top: 0',
+                'width: 1056px',
+                'min-height: 1px',
+                'opacity: 0.01',
+                'background: white',
+                'overflow: hidden',
+                'pointer-events: none',
+                'z-index: 2147483646'
+            ].join(';');
+
+            const pageWrapper = document.createElement('div');
+            pageWrapper.style.cssText = [
+                'position: static',
+                'left: 0',
+                'top: 0',
+                'width: 100%',
+                'min-height: 1px',
+                'padding: 24px',
+                'box-sizing: border-box',
+                'background: white',
+                'color: black',
+                'z-index: auto'
+            ].join(';');
+
+            if (reportStyle) {
+                pageWrapper.appendChild(reportStyle.cloneNode(true));
+            }
+
+            pageWrapper.appendChild(sectionNode.cloneNode(true));
+            pageHost.appendChild(pageWrapper);
+            document.body.appendChild(pageHost);
+
+            try {
+                await waitForRenderLayout();
+                const bounds = pageWrapper.getBoundingClientRect();
+                if (!bounds.width || !bounds.height) {
+                    throw new Error('The report section could not be laid out for rendering.');
+                }
+
+                const canvasWorker = html2pdf().set({
+                    html2canvas: {
+                        scale: 1.5,
+                        backgroundColor: '#ffffff',
+                        useCORS: true,
+                        logging: false
+                    }
+                }).from(pageWrapper).toCanvas();
+                const canvas = await canvasWorker.get('canvas');
+                if (!canvas || !canvas.width || !canvas.height) {
+                    throw new Error('The report section rendered as an empty canvas.');
+                }
+                return canvas;
+            } finally {
+                document.body.removeChild(pageHost);
+            }
+        }
+
+        function addCanvasToPdfPages(pdf, canvas, pageWidth, pageHeight, margin, startOnCurrentPage = false) {
+            const availableWidth = pageWidth - (margin * 2);
+            const availableHeight = pageHeight - (margin * 2);
+            const scale = availableWidth / canvas.width;
+            const sourcePageHeight = Math.max(1, Math.floor(availableHeight / scale));
+            let sourceY = 0;
+            let isFirstSlice = true;
+
+            while (sourceY < canvas.height) {
+                const sliceHeight = Math.min(sourcePageHeight, canvas.height - sourceY);
+                const sliceCanvas = document.createElement('canvas');
+                sliceCanvas.width = canvas.width;
+                sliceCanvas.height = sliceHeight;
+                const sliceCtx = sliceCanvas.getContext('2d');
+                sliceCtx.drawImage(canvas, 0, sourceY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+
+                const renderWidth = availableWidth;
+                const renderHeight = sliceHeight * scale;
+                const x = margin;
+                const y = margin;
+
+                if (!isFirstSlice || !startOnCurrentPage) {
+                    pdf.addPage();
+                }
+
+                pdf.addImage(sliceCanvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+                sourceY += sliceHeight;
+                isFirstSlice = false;
+            }
+
+            return !isFirstSlice;
         }
 
         async function exportReportToPdf(reportElement, filename, loadingDiv) {
@@ -6325,95 +6426,48 @@
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
             const margin = 36;
+            let hasWrittenPage = false;
 
             for (let index = 0; index < sections.length; index++) {
-                if (index === 0 && typeof pdf.setPage === 'function') {
-                    pdf.setPage(1);
-                } else if (index > 0) {
-                    pdf.addPage();
-                }
-
                 if (loadingDiv) {
                     loadingDiv.textContent = `Exporting PDF page ${index + 1} of ${sections.length}...`;
                 }
 
-                const pageHost = document.createElement('div');
-                pageHost.style.cssText = [
-                    'position: fixed',
-                    'left: 0',
-                    'top: 0',
-                    'width: 1056px',
-                    'min-height: 1px',
-                    'opacity: 0.01',
-                    'background: white',
-                    'overflow: hidden',
-                    'pointer-events: none',
-                    'z-index: 2147483646'
-                ].join(';');
-
-                const pageWrapper = document.createElement('div');
-                pageWrapper.style.cssText = [
-                    'position: static',
-                    'left: 0',
-                    'top: 0',
-                    'width: 100%',
-                    'min-height: 1px',
-                    'padding: 24px',
-                    'box-sizing: border-box',
-                    'background: white',
-                    'color: black',
-                    'z-index: auto'
-                ].join(';');
-
-                if (reportStyle) {
-                    pageWrapper.appendChild(reportStyle.cloneNode(true));
-                }
-
-                sections[index].forEach(node => {
-                    pageWrapper.appendChild(node.cloneNode(true));
-                });
-
-                pageHost.appendChild(pageWrapper);
-                document.body.appendChild(pageHost);
-
                 try {
-                    await waitForRenderLayout();
-                    const bounds = pageWrapper.getBoundingClientRect();
-                    if (!bounds.width || !bounds.height) {
-                        throw new Error(`Page ${index + 1} could not be laid out for rendering.`);
-                    }
+                    const section = sections[index];
+                    const canvas = await renderReportSectionToCanvas(section.node, reportStyle);
 
-                    const canvasWorker = html2pdf().set({
-                        html2canvas: {
-                            scale: 1.5,
-                            backgroundColor: '#ffffff',
-                            useCORS: true,
-                            logging: false
+                    if (section.mode === 'flow') {
+                        if (!hasWrittenPage && typeof pdf.setPage === 'function') {
+                            pdf.setPage(1);
                         }
-                    }).from(pageWrapper).toCanvas();
-                    const canvas = await canvasWorker.get('canvas');
-                    if (!canvas || !canvas.width || !canvas.height) {
-                        throw new Error(`Page ${index + 1} rendered as an empty canvas.`);
-                    }
-                    const imageData = canvas.toDataURL('image/jpeg', 0.92);
-                    const availableWidth = pageWidth - (margin * 2);
-                    const availableHeight = pageHeight - (margin * 2);
-                    const imageRatio = canvas.width / canvas.height;
-                    let renderWidth = availableWidth;
-                    let renderHeight = renderWidth / imageRatio;
+                        const wrotePages = addCanvasToPdfPages(pdf, canvas, pageWidth, pageHeight, margin, !hasWrittenPage);
+                        hasWrittenPage = hasWrittenPage || wrotePages;
+                    } else {
+                        if (hasWrittenPage) {
+                            pdf.addPage();
+                        } else if (typeof pdf.setPage === 'function') {
+                            pdf.setPage(1);
+                        }
 
-                    if (renderHeight > availableHeight) {
-                        renderHeight = availableHeight;
-                        renderWidth = renderHeight * imageRatio;
-                    }
+                        const availableWidth = pageWidth - (margin * 2);
+                        const availableHeight = pageHeight - (margin * 2);
+                        const imageRatio = canvas.width / canvas.height;
+                        let renderWidth = availableWidth;
+                        let renderHeight = renderWidth / imageRatio;
 
-                    const x = (pageWidth - renderWidth) / 2;
-                    const y = margin;
-                    pdf.addImage(imageData, 'JPEG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+                        if (renderHeight > availableHeight) {
+                            renderHeight = availableHeight;
+                            renderWidth = renderHeight * imageRatio;
+                        }
+
+                        const x = (pageWidth - renderWidth) / 2;
+                        const y = margin;
+                        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+                        hasWrittenPage = true;
+                    }
                 } catch (error) {
                     throw new Error(`PDF export stopped on page ${index + 1} of ${sections.length}: ${getExportErrorMessage(error)}`);
-                } finally {
-                    document.body.removeChild(pageHost);
                 }
 
                 if ((index + 1) % 10 === 0) {
@@ -6466,7 +6520,6 @@
 
                 } else if (item.type === 'folder') {
                     const summaryDiv = document.createElement('div');
-                    summaryDiv.className = 'print-page page-break';
                     const folderTotals = getItemTotals(item);
                     const voltage = (item.wireGaugeData && item.wireGaugeData.voltage) ? item.wireGaugeData.voltage : 12;
                     const safetyFactorMultiplier = voltage === 120 ? 1.0 : 1.20;
@@ -6578,9 +6631,7 @@
                             <div class="print-calc-left">${leftCalcHTML}</div>
                             <div class="print-calc-right">${panelInfoHTML}</div>
                         </div>`;
-                    const summaryHeading = summaryCollector.length === 0 ? '<h2>Project Summary</h2>' : '';
                     summaryDiv.innerHTML = `
-                        ${summaryHeading}
                         <div class="print-summary">
                             <h3>${item.name}</h3>
                             <p><strong>Calculation Total (Red):</strong> ${folderTotals.redTotal.toFixed(2)} feet</p>
