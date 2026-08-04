@@ -6242,9 +6242,29 @@
                 if (format === 'pdf') {
                     await exportReportToPdf(reportElement, `${filenameBase}.pdf`, loadingDiv);
                 }
+            } catch (error) {
+                console.error('Export failed.', error);
+                showCustomModal({
+                    type: 'info',
+                    title: `${format.toUpperCase()} export failed`,
+                    message: getExportErrorMessage(error)
+                });
             } finally {
                 loadingDiv.remove();
             }
+        }
+
+        function getExportErrorMessage(error) {
+            if (!error) {
+                return 'An unknown export error occurred.';
+            }
+            if (typeof error === 'string') {
+                return error;
+            }
+            if (error.message) {
+                return error.message;
+            }
+            return String(error);
         }
 
         function splitReportIntoPdfSections(reportElement) {
@@ -6286,7 +6306,7 @@
             const reportStyle = reportElement.querySelector('style');
             const sections = splitReportIntoPdfSections(reportElement);
             if (sections.length === 0) {
-                return;
+                throw new Error('There were no report pages available to export.');
             }
 
             const pdfBootstrap = document.createElement('div');
@@ -6294,19 +6314,27 @@
             pdfBootstrap.style.cssText = 'position: fixed; left: -20000px; top: 0; width: 1px; height: 1px; overflow: hidden; background: white;';
             document.body.appendChild(pdfBootstrap);
 
-            const pdfWorker = html2pdf().set({
-                margin: 0,
-                image: { type: 'jpeg', quality: 0.92 },
-                html2canvas: {
-                    scale: 1,
-                    backgroundColor: '#ffffff',
-                    useCORS: true,
-                    logging: false
-                },
-                jsPDF: { orientation: 'landscape', unit: 'pt', format: 'letter' }
-            }).from(pdfBootstrap).toPdf();
-            const pdf = await pdfWorker.get('pdf');
-            document.body.removeChild(pdfBootstrap);
+            let pdf;
+            try {
+                const pdfWorker = html2pdf().set({
+                    margin: 0,
+                    image: { type: 'jpeg', quality: 0.92 },
+                    html2canvas: {
+                        scale: 1,
+                        backgroundColor: '#ffffff',
+                        useCORS: true,
+                        logging: false
+                    },
+                    jsPDF: { orientation: 'landscape', unit: 'pt', format: 'letter' }
+                }).from(pdfBootstrap).toPdf();
+                pdf = await pdfWorker.get('pdf');
+            } finally {
+                document.body.removeChild(pdfBootstrap);
+            }
+
+            if (!pdf) {
+                throw new Error('The PDF engine did not initialize correctly.');
+            }
 
             const pageWidth = pdf.internal.pageSize.getWidth();
             const pageHeight = pdf.internal.pageSize.getHeight();
@@ -6356,6 +6384,9 @@
                         }
                     }).from(pageWrapper).toCanvas();
                     const canvas = await canvasWorker.get('canvas');
+                    if (!canvas || !canvas.width || !canvas.height) {
+                        throw new Error(`Page ${index + 1} rendered as an empty canvas.`);
+                    }
                     const imageData = canvas.toDataURL('image/jpeg', 0.92);
                     const availableWidth = pageWidth - (margin * 2);
                     const availableHeight = pageHeight - (margin * 2);
@@ -6371,12 +6402,22 @@
                     const x = (pageWidth - renderWidth) / 2;
                     const y = margin;
                     pdf.addImage(imageData, 'JPEG', x, y, renderWidth, renderHeight, undefined, 'FAST');
+                } catch (error) {
+                    throw new Error(`PDF export stopped on page ${index + 1} of ${sections.length}: ${getExportErrorMessage(error)}`);
                 } finally {
                     document.body.removeChild(pageWrapper);
                 }
+
+                if ((index + 1) % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                }
             }
 
-            pdf.save(filename);
+            try {
+                pdf.save(filename);
+            } catch (error) {
+                throw new Error(`The PDF file could not be saved: ${getExportErrorMessage(error)}`);
+            }
         }
 
         async function generateLayerPages(currentItems, body, parentFolder, summaryCollector) {
