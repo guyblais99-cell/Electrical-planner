@@ -6293,6 +6293,11 @@
             return sections;
         }
 
+        async function waitForRenderLayout() {
+            await new Promise(requestAnimationFrame);
+            await new Promise(requestAnimationFrame);
+        }
+
         async function exportReportToPdf(reportElement, filename, loadingDiv) {
             if (typeof html2pdf !== 'function') {
                 showCustomModal({
@@ -6351,12 +6356,25 @@
                     loadingDiv.textContent = `Exporting PDF page ${index + 1} of ${sections.length}...`;
                 }
 
+                const pageHost = document.createElement('div');
+                pageHost.style.cssText = [
+                    'position: fixed',
+                    'left: 0',
+                    'top: 0',
+                    'width: 0',
+                    'height: 0',
+                    'overflow: visible',
+                    'pointer-events: none',
+                    'z-index: -1'
+                ].join(';');
+
                 const pageWrapper = document.createElement('div');
                 pageWrapper.style.cssText = [
-                    'position: fixed',
-                    'left: -20000px',
+                    'position: absolute',
+                    'left: 0',
                     'top: 0',
                     'width: 1056px',
+                    'min-height: 1px',
                     'padding: 24px',
                     'box-sizing: border-box',
                     'background: white',
@@ -6372,9 +6390,16 @@
                     pageWrapper.appendChild(node.cloneNode(true));
                 });
 
-                document.body.appendChild(pageWrapper);
+                pageHost.appendChild(pageWrapper);
+                document.body.appendChild(pageHost);
 
                 try {
+                    await waitForRenderLayout();
+                    const bounds = pageWrapper.getBoundingClientRect();
+                    if (!bounds.width || !bounds.height) {
+                        throw new Error(`Page ${index + 1} could not be laid out for rendering.`);
+                    }
+
                     const canvasWorker = html2pdf().set({
                         html2canvas: {
                             scale: 1.5,
@@ -6405,7 +6430,7 @@
                 } catch (error) {
                     throw new Error(`PDF export stopped on page ${index + 1} of ${sections.length}: ${getExportErrorMessage(error)}`);
                 } finally {
-                    document.body.removeChild(pageWrapper);
+                    document.body.removeChild(pageHost);
                 }
 
                 if ((index + 1) % 10 === 0) {
