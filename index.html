@@ -1403,7 +1403,7 @@
         let projectName = "Untitled Project";
         let modalNameResolveToken = null;
         let lastProjectFileHandle = null;
-            const APP_VERSION = '2026.08.04.1';
+            const LOCAL_VERSION_URL = './version.json';
             const VERSION_CHECK_URL = 'https://raw.githubusercontent.com/guyblais99-cell/Electrical-planner/main/version.json';
         const AUTOSAVE_DB_NAME = 'ElectricalPlannerAutosave';
         const AUTOSAVE_STORE_NAME = 'projects';
@@ -2979,6 +2979,7 @@
 
         function saveState(layer) {
             if (!layer) return;
+            scheduleAutosave();
             layer.redoStack = [];
             layer.undoStack.push({
                 paths: JSON.parse(JSON.stringify(layer.paths)),
@@ -3079,6 +3080,7 @@
                     if (!isNaN(lengthInches) && dist > 0) {
                         globalScale = (lengthInches / 12) / dist;
                         getFlatLayers().forEach(l => l.scale = globalScale);
+                        scheduleAutosave();
                         drawGrid();
                     }
                     layer.calibrationPoints = [];
@@ -6586,6 +6588,7 @@
             notesTextarea.value = folder.notes || '';
             notesTextarea.addEventListener('input', () => { 
                 folder.notes = notesTextarea.value;
+                scheduleAutosave();
                 autoResizeTextarea(notesTextarea);
             });
             notesDiv.appendChild(notesHeader);
@@ -6891,9 +6894,22 @@
             return 0;
         }
 
+        async function getLocalAppVersion() {
+            try {
+                const response = await fetch(`${LOCAL_VERSION_URL}?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return '';
+                const localInfo = await response.json();
+                return localInfo && typeof localInfo.version === 'string' ? localInfo.version.trim() : '';
+            } catch (error) {
+                console.warn('Local version read failed.', error);
+                return '';
+            }
+        }
+
         async function checkForAppUpdate() {
             showStartupStatus('', 'Checking for updates...');
             try {
+                const localVersion = await getLocalAppVersion();
                 const response = await fetch(`${VERSION_CHECK_URL}?t=${Date.now()}`, { cache: 'no-store' });
                 if (!response.ok) {
                     showStartupStatus('warn', 'Update check unavailable', 1400);
@@ -6901,7 +6917,7 @@
                 }
                 const remoteInfo = await response.json();
                 const remoteVersion = remoteInfo && typeof remoteInfo.version === 'string' ? remoteInfo.version.trim() : '';
-                if (!remoteVersion || compareVersionParts(remoteVersion, APP_VERSION) <= 0) {
+                if (!remoteVersion || (localVersion && compareVersionParts(remoteVersion, localVersion) <= 0)) {
                     showStartupStatus('ok', 'App is up to date', 1000);
                     return;
                 }
@@ -6924,7 +6940,8 @@
         async function registerAppShell() {
             if ('serviceWorker' in navigator) {
                 try {
-                    await navigator.serviceWorker.register('./sw.js');
+                    const registration = await navigator.serviceWorker.register('./sw.js');
+                    await registration.update();
                 } catch (error) {
                     console.warn('Service worker registration failed.', error);
                 }
