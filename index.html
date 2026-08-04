@@ -338,6 +338,43 @@
             box-sizing: border-box;
             overflow-y: auto;
         }
+        #data-panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        #data-panel-header h3 {
+            margin: 0;
+        }
+        #toggle-data-panel-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 auto;
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            line-height: 1.2;
+            background: #f8fafc;
+            color: #1f2937;
+            cursor: pointer;
+            box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+            transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+            white-space: nowrap;
+        }
+        #toggle-data-panel-btn:hover {
+            background: #eef2f7;
+            border-color: #94a3b8;
+            box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+        }
+        #data-panel-details {
+            display: none;
+        }
         #folder-notes {
             width: 100%;
             margin-top: 8px;
@@ -1197,9 +1234,14 @@
         </div>
     </div>
     <div id="data-panel">
-        <h3>Data Panel</h3>
-        <div id="active-item-details"></div>
-        <div id="folder-totals"></div>
+        <div id="data-panel-header">
+            <h3>Data Panel</h3>
+            <button id="toggle-data-panel-btn" type="button">Show Details</button>
+        </div>
+        <div id="data-panel-details">
+            <div id="active-item-details"></div>
+            <div id="folder-totals"></div>
+        </div>
         <div id="wire-calculator">
             <h4>Wire Gauge Calculator</h4>
             <div id="panel-capacity-warning"></div>
@@ -1390,6 +1432,8 @@
         const folderViewContainer = document.getElementById('folder-view-container');
         const toolbarsContainer = document.getElementById('toolbars-container');
         const activeFolderDisplay = document.getElementById('active-folder-display');
+        const dataPanelDetails = document.getElementById('data-panel-details');
+        const toggleDataPanelBtn = document.getElementById('toggle-data-panel-btn');
         const autosaveIndicator = document.getElementById('autosave-indicator');
         const startupStatus = document.getElementById('startup-status');
 
@@ -1425,6 +1469,7 @@
         let autosaveInFlight = false;
         let autosaveDirty = false;
         let hasUnsavedChangesSinceSave = false;
+        let showDataPanelDetails = false;
         let placingSymbolType = null;
         let moveSymbolMode = false;
         let deleteSymbolMode = false;
@@ -1854,6 +1899,14 @@
             showGuidelines = showGuidelinesToggle.checked;
             if(activeLayer) redrawLayer(activeLayer);
         });
+
+        if (toggleDataPanelBtn) {
+            toggleDataPanelBtn.addEventListener('click', () => {
+                showDataPanelDetails = !showDataPanelDetails;
+                updateDataPanelDetailsVisibility();
+            });
+        }
+        updateDataPanelDetailsVisibility();
 
         deleteSelectedBtn.addEventListener('click', () => {
             const selected = getAllSelected();
@@ -5555,6 +5608,12 @@
             scheduleAutosave();
         }
 
+        function updateDataPanelDetailsVisibility() {
+            if (!dataPanelDetails || !toggleDataPanelBtn) return;
+            dataPanelDetails.style.display = showDataPanelDetails ? 'block' : 'none';
+            toggleDataPanelBtn.textContent = showDataPanelDetails ? 'Hide Details' : 'Show Details';
+        }
+
         function scheduleAutosave() {
             autosaveDirty = true;
         }
@@ -6627,21 +6686,35 @@
         function renderList(parentUl, currentItems) {
             currentItems.forEach((item, index) => {
                 const li = document.createElement('li');
-                li.draggable = true;
+                const itemCanDrag = item.type === 'layer';
+                li.draggable = itemCanDrag;
                 li.dataset.id = item.id;
                 if ((item.type === 'layer' && item === activeLayer) || (item.type ==='folder' && item === dataPanelItem)) { 
                     li.classList.add('active'); 
                 }
                 if (item.selected) { li.classList.add('selected'); }
-                li.addEventListener('dragstart', (e) => { draggedItem = item; e.dataTransfer.setData('text/plain', item.id); li.classList.add('dragging'); });
+                li.addEventListener('dragstart', (e) => {
+                    if (!itemCanDrag) {
+                        e.preventDefault();
+                        return;
+                    }
+                    draggedItem = item;
+                    e.dataTransfer.setData('text/plain', item.id);
+                    li.classList.add('dragging');
+                });
                 li.addEventListener('dragend', () => { draggedItem = null; li.classList.remove('dragging'); layersList.querySelectorAll('li').forEach(l => l.classList.remove('drag-over')); });
                 li.addEventListener('dragover', (e) => { e.preventDefault(); });
-                li.addEventListener('dragenter', (e) => { e.preventDefault(); if (draggedItem && draggedItem !== item) { li.classList.add('drag-over'); } });
+                li.addEventListener('dragenter', (e) => {
+                    e.preventDefault();
+                    if (draggedItem && draggedItem.type === 'layer' && draggedItem !== item) {
+                        li.classList.add('drag-over');
+                    }
+                });
                 li.addEventListener('dragleave', () => { li.classList.remove('drag-over'); });
                 li.addEventListener('drop', (e) => {
                     e.preventDefault();
                     li.classList.remove('drag-over');
-                    if (!draggedItem || draggedItem === item) return;
+                    if (!draggedItem || draggedItem.type !== 'layer' || draggedItem === item) return;
                     const draggedParentInfo = findParent(draggedItem);
                     const targetParentInfo = findParent(item);
                     if (!draggedParentInfo || !targetParentInfo) return;
