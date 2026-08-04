@@ -6179,23 +6179,20 @@
             allFolders.forEach(f => f.isHeaderPrinted = false);
             
             if (breakerPanelConfig) {
-                const panelSection = document.createElement('div');
-                panelSection.innerHTML = '<h2 style="margin-top:24px;">Breaker Panel Layout</h2>';
-                panelSection.appendChild(generatePrintableBreakerPanel());
-                introPage.appendChild(panelSection);
+                const panelPage = document.createElement('div');
+                panelPage.className = 'print-page page-break';
+                panelPage.innerHTML = '<h2>Breaker Panel Layout</h2>';
+                panelPage.appendChild(generatePrintableBreakerPanel());
+                reportContainer.appendChild(panelPage);
             }
 
             let allFolderSummaries = [];
             await generateLayerPages(items, reportContainer, null, allFolderSummaries);
 
             if (allFolderSummaries.length > 0) {
-                const finalSummaryPage = document.createElement('div');
-                finalSummaryPage.className = 'print-page page-break';
-                finalSummaryPage.innerHTML = '<h2>Project Summary</h2>';
                 allFolderSummaries.forEach(summaryData => {
-                    finalSummaryPage.appendChild(summaryData);
+                    reportContainer.appendChild(summaryData);
                 });
-                reportContainer.appendChild(finalSummaryPage);
             }
 
             const bomData = generateBomData();
@@ -6469,6 +6466,7 @@
 
                 } else if (item.type === 'folder') {
                     const summaryDiv = document.createElement('div');
+                    summaryDiv.className = 'print-page page-break';
                     const folderTotals = getItemTotals(item);
                     const voltage = (item.wireGaugeData && item.wireGaugeData.voltage) ? item.wireGaugeData.voltage : 12;
                     const safetyFactorMultiplier = voltage === 120 ? 1.0 : 1.20;
@@ -6580,7 +6578,9 @@
                             <div class="print-calc-left">${leftCalcHTML}</div>
                             <div class="print-calc-right">${panelInfoHTML}</div>
                         </div>`;
+                    const summaryHeading = summaryCollector.length === 0 ? '<h2>Project Summary</h2>' : '';
                     summaryDiv.innerHTML = `
+                        ${summaryHeading}
                         <div class="print-summary">
                             <h3>${item.name}</h3>
                             <p><strong>Calculation Total (Red):</strong> ${folderTotals.redTotal.toFixed(2)} feet</p>
