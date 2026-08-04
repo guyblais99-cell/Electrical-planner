@@ -5333,6 +5333,16 @@
             };
         }
 
+        function buildProjectSaveJson() {
+            return JSON.stringify(buildProjectSaveObject(), null, 2);
+        }
+
+        async function writeJsonToFileHandle(fileHandle, jsonString) {
+            const writable = await fileHandle.createWritable();
+            await writable.write(jsonString);
+            await writable.close();
+        }
+
         function hasMeaningfulProjectData(projectData) {
             if (!projectData) return false;
             if (Array.isArray(projectData.projectItems) && projectData.projectItems.length > 0) return true;
@@ -5490,6 +5500,28 @@
             }
         }
 
+        async function quickSaveToLastProjectFile(showStatus = false) {
+            if (!lastProjectFileHandle) return false;
+            try {
+                if (showStatus) {
+                    showAutosaveIndicator('saving', 'Saving file...', 0);
+                }
+                await writeJsonToFileHandle(lastProjectFileHandle, buildProjectSaveJson());
+                autosaveDirty = false;
+                hasUnsavedChangesSinceSave = false;
+                if (showStatus) {
+                    showAutosaveIndicator('saved', 'File saved');
+                }
+                return true;
+            } catch (error) {
+                console.warn('Quick save to existing project file failed.', error);
+                if (showStatus) {
+                    showAutosaveIndicator('error', 'File save failed', 1800);
+                }
+                return false;
+            }
+        }
+
         function startAutosaveLoop() {
             if (autosaveIntervalId !== null) {
                 clearInterval(autosaveIntervalId);
@@ -5573,15 +5605,24 @@
             hasUnsavedChangesSinceSave = false;
         }
 
-        async function writeProjectFilesToDisk() {
-            const projectSaveObject = buildProjectSaveObject();
-            const jsonString = JSON.stringify(projectSaveObject, null, 2);
+        async function writeProjectFilesToDisk(options = {}) {
+            const jsonString = buildProjectSaveJson();
+
+            if (options.preferExistingHandle && lastProjectFileHandle) {
+                try {
+                    await writeJsonToFileHandle(lastProjectFileHandle, jsonString);
+                    activateButton(saveProjectBtn);
+                    return true;
+                } catch (error) {
+                    console.warn('Existing file overwrite failed, falling back to picker.', error);
+                }
+            }
 
             if (window.showSaveFilePicker) {
                 const desiredFilename = projectName + '.json';
                 try {
                     let fileHandle = lastProjectFileHandle;
-                    if (!fileHandle || fileHandle.name !== desiredFilename) {
+                    if (!fileHandle || (!options.preferExistingHandle && fileHandle.name !== desiredFilename)) {
                         fileHandle = await window.showSaveFilePicker({
                             suggestedName: desiredFilename,
                             types: [{
@@ -5591,9 +5632,7 @@
                         });
                     }
 
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(jsonString);
-                    await writable.close();
+                    await writeJsonToFileHandle(fileHandle, jsonString);
                     lastProjectFileHandle = fileHandle;
                     activateButton(saveProjectBtn);
                     return true;
@@ -5616,6 +5655,15 @@
         }
 
         async function saveProject() {
+            if (lastProjectFileHandle) {
+                const savedExisting = await writeProjectFilesToDisk({ preferExistingHandle: true });
+                if (savedExisting) {
+                    autosaveDirty = false;
+                    hasUnsavedChangesSinceSave = false;
+                    return true;
+                }
+            }
+
             const entered = await promptProjectDisplayName({
                 title: 'Save project',
                 primaryLabel: 'Continue',
@@ -6971,15 +7019,21 @@
             startAutosaveLoop();
             window.addEventListener('beforeunload', (event) => {
                 if (!hasUnsavedChangesSinceSave && !autosaveInFlight) return;
+                if (lastProjectFileHandle) {
+                    void quickSaveToLastProjectFile(false);
+                    return;
+                }
                 event.preventDefault();
                 event.returnValue = '';
             });
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
+                    void quickSaveToLastProjectFile(false);
                     void flushAutosave(false);
                 }
             });
             window.addEventListener('pagehide', () => {
+                void quickSaveToLastProjectFile(false);
                 void flushAutosave(false);
             });
             void checkForAppUpdate();
