@@ -952,6 +952,37 @@
             color: #374151;
         }
 
+        #autosave-indicator {
+            position: fixed;
+            right: 16px;
+            bottom: 16px;
+            z-index: 10000;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #ffffff;
+            background: rgba(31, 41, 55, 0.9);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+            opacity: 0;
+            transform: translateY(8px);
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none;
+        }
+        #autosave-indicator.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        #autosave-indicator.saving {
+            background: rgba(3, 105, 161, 0.92);
+        }
+        #autosave-indicator.saved {
+            background: rgba(5, 150, 105, 0.92);
+        }
+        #autosave-indicator.error {
+            background: rgba(185, 28, 28, 0.92);
+        }
+
     </style>
 </head>
 <body>
@@ -1249,6 +1280,8 @@
         </div>
     </div>
 
+    <div id="autosave-indicator" aria-live="polite">Saving...</div>
+
     <script>
         const workspace = document.getElementById('workspace');
         const layersList = document.getElementById('layers-list');
@@ -1318,6 +1351,7 @@
         const folderViewContainer = document.getElementById('folder-view-container');
         const toolbarsContainer = document.getElementById('toolbars-container');
         const activeFolderDisplay = document.getElementById('active-folder-display');
+        const autosaveIndicator = document.getElementById('autosave-indicator');
 
         // Batch setup modal elements
         const batchSetupBtn = document.getElementById('batch-setup-btn');
@@ -1342,9 +1376,10 @@
         const AUTOSAVE_STORE_NAME = 'projects';
         const AUTOSAVE_STORAGE_KEY = 'electrical-planner.autosave.backup';
         const AUTOSAVE_RECORD_KEY = 'latest';
-        const AUTOSAVE_DELAY_MS = 2000;
+        const AUTOSAVE_INTERVAL_MS = 5 * 60 * 1000;
         let autosaveDbPromise = null;
-        let autosaveTimer = null;
+        let autosaveIntervalId = null;
+        let autosaveStatusHideTimer = null;
         let autosaveInFlight = false;
         let autosaveDirty = false;
         let placingSymbolType = null;
@@ -3714,7 +3749,7 @@
                 updateDataPanel();
             } else if (mode === 'calibrate' && layer.calibrationPoints && layer.calibrationPoints.length === 1) {
                 layer.calibrationPreview = {x: getCanvasCoordinates(e).canvasX, y: getCanvasCoordinates(e).canvasY};
-                redrawLayer(layer);
+                scheduleLayerRedraw(layer);
             } else if (mode === 'draw' && currentPath && !drawDeleteMode) {
                 layer.drawingPreview = { x: canvasX, y: canvasY };
                 redrawLayer(layer);
@@ -4178,6 +4213,7 @@
         function redrawLayer(layer) {
             const ctx = layer.drawingCanvas.getContext('2d');
             ctx.clearRect(0, 0, WIDTH, HEIGHT);
+            layer.folderViewThumbnail = null;
 
             if (showGuidelines && layer.guidelines) {
                 ctx.save();
@@ -4204,6 +4240,22 @@
                 });
                 ctx.restore();
             }
+
+        let pendingLayerRedraw = null;
+        let pendingLayerRedrawFrame = null;
+
+        function scheduleLayerRedraw(layer) {
+            pendingLayerRedraw = layer;
+            if (pendingLayerRedrawFrame !== null) return;
+            pendingLayerRedrawFrame = requestAnimationFrame(() => {
+                pendingLayerRedrawFrame = null;
+                const layerToRedraw = pendingLayerRedraw;
+                pendingLayerRedraw = null;
+                if (layerToRedraw) {
+                    redrawLayer(layerToRedraw);
+                }
+            });
+        }
 
             // Preview Guideline
             if (mode === 'guideline' && guidelineToolState.isActive && guidelineToolState.previewOrientation && guidelineToolState.currentPos && !guidelineToolState.isTyping && !guidelineDeleteMode) {
@@ -4338,7 +4390,6 @@
                 }
             }
 
-            scheduleAutosave();
         }
 
         function calculatePathLength(paths, scale) {
@@ -5336,32 +5387,60 @@
             }
         }
 
-        function scheduleAutosave() {
-            autosaveDirty = true;
-            if (autosaveTimer || autosaveInFlight) return;
-            autosaveTimer = setTimeout(() => {
-                autosaveTimer = null;
-                void flushAutosave();
-            }, AUTOSAVE_DELAY_MS);
+        function showAutosaveIndicator(status, message, autoHideMs = 1400) {
+            if (!autosaveIndicator) return;
+            autosaveIndicator.textContent = message;
+            autosaveIndicator.classList.remove('saving', 'saved', 'error');
+            autosaveIndicator.classList.add(status, 'visible');
+            if (autosaveStatusHideTimer) {
+                clearTimeout(autosaveStatusHideTimer);
+                autosaveStatusHideTimer = null;
+            }
+            if (autoHideMs > 0) {
+                autosaveStatusHideTimer = setTimeout(() => {
+                    autosaveIndicator.classList.remove('visible');
+                }, autoHideMs);
+            }
         }
 
-        async function flushAutosave() {
+        function scheduleAutosave() {
+            autosaveDirty = true;
+        }
+
+        async function flushAutosave(showStatus = true) {
             if (!autosaveDirty || autosaveInFlight) return;
             autosaveInFlight = true;
+            if (showStatus) {
+                showAutosaveIndicator('saving', 'Saving...', 0);
+            }
             try {
                 await writeAutosaveSnapshot(JSON.stringify(buildProjectSaveObject()));
                 autosaveDirty = false;
+                if (showStatus) {
+                    showAutosaveIndicator('saved', 'Saved');
+                }
             } catch (error) {
                 console.warn('Autosave failed.', error);
+                if (showStatus) {
+                    showAutosaveIndicator('error', 'Autosave failed', 1800);
+                }
             } finally {
                 autosaveInFlight = false;
-                if (autosaveDirty && !autosaveTimer) {
-                    autosaveTimer = setTimeout(() => {
-                        autosaveTimer = null;
-                        void flushAutosave();
-                    }, AUTOSAVE_DELAY_MS);
-                }
             }
+        }
+
+        function startAutosaveLoop() {
+            if (autosaveIntervalId !== null) {
+                clearInterval(autosaveIntervalId);
+            }
+            autosaveIntervalId = setInterval(() => {
+                if (!autosaveDirty || autosaveInFlight) return;
+                if ('requestIdleCallback' in window) {
+                    window.requestIdleCallback(() => { void flushAutosave(true); }, { timeout: 2000 });
+                } else {
+                    void flushAutosave(true);
+                }
+            }, AUTOSAVE_INTERVAL_MS);
         }
 
         async function applySerializedProject(loadedData) {
@@ -5429,7 +5508,6 @@
             }
             updateSymbolDefaultLabels();
             checkPanelCapacityAndWarn();
-            scheduleAutosave();
         }
 
         async function writeProjectFilesToDisk() {
@@ -6031,13 +6109,20 @@
         function getLayerAsImage(layer) {
             return new Promise(resolve => {
                 try {
+                    if (layer.folderViewThumbnail) {
+                        const cachedImage = new Image();
+                        cachedImage.onload = () => resolve(cachedImage);
+                        cachedImage.onerror = () => resolve(null);
+                        cachedImage.src = layer.folderViewThumbnail;
+                        return;
+                    }
+
                     const tempCanvas = document.createElement('canvas');
                     tempCanvas.width = WIDTH; tempCanvas.height = HEIGHT;
                     const ctx = tempCanvas.getContext('2d');
                     // Draw the background image directly (avoids expensive toDataURL + Image round-trip
                     // which floods memory and can trigger canvas context loss on the source canvas).
                     ctx.drawImage(layer.imageCanvas, 0, 0);
-                    redrawLayer(layer);
                     ctx.drawImage(layer.drawingCanvas, 0, 0);
                     const croppedCanvas = cropCanvasToContent(tempCanvas);
                     if (!croppedCanvas) {
@@ -6048,7 +6133,9 @@
                     // Always set onload/onerror before assigning src to avoid missing the event.
                     finalImage.onload = () => resolve(finalImage);
                     finalImage.onerror = () => resolve(null);
-                    finalImage.src = croppedCanvas.toDataURL('image/png');
+                    const thumbnailDataUrl = croppedCanvas.toDataURL('image/png');
+                    layer.folderViewThumbnail = thumbnailDataUrl;
+                    finalImage.src = thumbnailDataUrl;
                 } catch (e) {
                     console.error('getLayerAsImage error:', e);
                     resolve(null);
@@ -6437,6 +6524,7 @@
         async function renderFolderView(folder) {
             folderViewContainer.style.display = 'flex';
             toolbarsContainer.style.display = 'none';
+            folderViewContainer.innerHTML = '';
 
             const notesDiv = document.createElement('div');
             notesDiv.id = 'folder-view-notes';
@@ -6559,7 +6647,6 @@
                 layersList.scrollTop = layersList.scrollHeight;
             }
             shouldScrollToBottom = false;
-            scheduleAutosave();
         }
 
         function selectItem(itemToSelect) {
@@ -6789,6 +6876,12 @@
             updateSymbolDefaultLabels();
             updateProjectTitle();
             setupWorkspacePanZoom();
+            startAutosaveLoop();
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) {
+                    void flushAutosave(false);
+                }
+            });
             void checkForAppUpdate();
         }
 
