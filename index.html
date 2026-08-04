@@ -2594,7 +2594,7 @@
 
             for (let i = 0; i < breakerPanelConfig.dcSlots; i++) {
                 const slot = document.createElement('div');
-                slot.className = 'panel-slot';
+                slot.className = 'print-panel-slot';
                 const folder = dcFolders[i];
                 if (folder) {
                     const fuseSize = getFuseSize(folder.wireGaugeData.amps);
@@ -2608,7 +2608,7 @@
 
             for (let i = 0; i < breakerPanelConfig.acSlots; i++) {
                 const slot = document.createElement('div');
-                slot.className = 'panel-slot';
+                slot.className = 'print-panel-slot';
                 const folder = acFolders[i];
                 if (folder) {
                     const breakerSize = getFuseSize(folder.wireGaugeData.amps);
@@ -6081,33 +6081,33 @@
         function generateBomPage(bomData) {
             const { symbolCounts, wireGaugeTotals, fuseCounts } = bomData;
             const bomPage = document.createElement('div');
-            bomPage.className = 'print-page page-break';
+            bomPage.className = 'print-flow-section';
             bomPage.innerHTML = '<h2>Bill of Materials</h2>';
 
             if (Object.keys(symbolCounts).length > 0) {
-                let symbolsHtml = '<h3>Components</h3><table id="bom-table"><thead><tr><th>Item</th><th>Quantity</th></tr></thead><tbody>';
+                let symbolsHtml = '<div class="bom-section"><h3>Components</h3><table class="bom-table"><thead><tr><th>Item</th><th>Quantity</th></tr></thead><tbody>';
                 Object.keys(symbolCounts).sort().forEach(name => {
                     symbolsHtml += `<tr><td>${name}</td><td>${symbolCounts[name]}</td></tr>`;
                 });
-                symbolsHtml += '</tbody></table>';
+                symbolsHtml += '</tbody></table></div>';
                 bomPage.innerHTML += symbolsHtml;
             }
 
             if (Object.keys(wireGaugeTotals).length > 0) {
-                let wireHtml = '<h3 style="margin-top: 20px;">Wire Required</h3><table id="bom-table"><thead><tr><th>Wire Type</th><th>Total Circuit Length (ft)</th></tr></thead><tbody>';
+                let wireHtml = '<div class="bom-section"><h3>Wire Required</h3><table class="bom-table"><thead><tr><th>Wire Type</th><th>Total Circuit Length (ft)</th></tr></thead><tbody>';
                 Object.keys(wireGaugeTotals).sort().forEach(gaugeKey => {
                      wireHtml += `<tr><td>${gaugeKey}</td><td>${wireGaugeTotals[gaugeKey].toFixed(2)}</td></tr>`;
                 });
-                wireHtml += '</tbody></table>';
+                wireHtml += '</tbody></table></div>';
                 bomPage.innerHTML += wireHtml;
             }
 
             if (Object.keys(fuseCounts).length > 0) {
-                let fusesHtml = '<h3 style="margin-top: 20px;">Fuses & Breakers</h3><table id="bom-table"><thead><tr><th>Size</th><th>Quantity</th></tr></thead><tbody>';
+                let fusesHtml = '<div class="bom-section"><h3>Fuses & Breakers</h3><table class="bom-table"><thead><tr><th>Size</th><th>Quantity</th></tr></thead><tbody>';
                  Object.keys(fuseCounts).sort((a,b) => parseFloat(a) - parseFloat(b)).forEach(size => {
                     fusesHtml += `<tr><td>${size}</td><td>${fuseCounts[size]}</td></tr>`;
                 });
-                fusesHtml += '</tbody></table>';
+                fusesHtml += '</tbody></table></div>';
                 bomPage.innerHTML += fusesHtml;
             }
 
@@ -6143,23 +6143,28 @@
                         break-after: auto;
                         page-break-after: auto;
                     }
-                    .print-summary { border: 1px solid #ccc; border-radius: 8px; margin-bottom: 20px; padding: 0 20px 20px 20px; } 
-                    .print-summary h3 { margin-top: 20px; border-bottom: 2px solid #333; padding-bottom: 10px; } 
-                    .print-summary pre { white-space: pre-wrap; word-wrap: break-word; background-color: #f4f4f4; padding: 10px; border-radius: 4px; }
-                    .print-summary ol { padding-left: 20px; margin: 10px 0; }
-                    .print-summary li { margin-bottom: 10px; } 
+                    .print-summary { border: 1px solid #ccc; border-radius: 8px; margin-bottom: 14px; padding: 0 14px 14px 14px; font-size: 12px; line-height: 1.35; } 
+                    .print-summary h3 { margin-top: 14px; margin-bottom: 10px; border-bottom: 2px solid #333; padding-bottom: 6px; font-size: 16px; } 
+                    .print-summary h4 { margin: 12px 0 8px 0; font-size: 13px; }
+                    .print-summary p { margin: 6px 0; }
+                    .print-summary pre { white-space: pre-wrap; word-wrap: break-word; background-color: #f4f4f4; padding: 8px; border-radius: 4px; margin: 8px 0 0 0; font-size: 11px; line-height: 1.3; }
+                    .print-summary ol { padding-left: 18px; margin: 8px 0; }
+                    .print-summary li { margin-bottom: 6px; } 
                     .print-layer-content img { max-width: 100%; height: auto; margin-top: 10px; border: 1px solid #eee; } 
                     .print-brief-header { font-weight: 600; color: #1f2937; padding-bottom: 5px; border-bottom: 1px solid #ccc; margin-bottom: 10px; page-break-after: avoid; page-break-inside: avoid;}
-                    .print-panel-container { display: flex; justify-content: space-around; margin-top: 20px; font-size: 12px; }
-                    .print-panel { border: 2px solid #ccc; border-radius: 8px; padding: 10px; width: 45%; }
-                    .print-panel h3 { margin-top: 0; text-align: center; }
+                    .print-panel-container { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; margin-top: 14px; font-size: 11px; }
+                    .print-panel { border: 2px solid #ccc; border-radius: 8px; padding: 8px; width: calc(50% - 7px); box-sizing: border-box; }
+                    .print-panel h3 { margin: 0 0 8px 0; text-align: center; font-size: 15px; }
                     .print-panel-slot { display: flex; justify-content: space-between; align-items: center; padding: 6px; margin-bottom: 4px; border-radius: 4px; background-color: #f3f4f6; }
+                    .print-panel-slot:last-child { margin-bottom: 0; }
                     .print-slot-name { font-weight: normal; }
                     .print-slot-fuse { font-weight: bold; }
                     .print-panel-slot.empty { background-color: #e5e7eb; color: #9ca3af; justify-content: center; }
-                    #bom-table { width: 100%; border-collapse: collapse; margin-top: 15px; }
-                    #bom-table th, #bom-table td { border: 1px solid #ccc; padding: 8px; text-align: left; }
-                    #bom-table th { background-color: #f2f2f2; }
+                    .bom-table { width: 100%; border-collapse: collapse; margin-top: 10px; table-layout: fixed; }
+                    .bom-table th, .bom-table td { border: 1px solid #ccc; padding: 6px 8px; text-align: left; vertical-align: top; font-size: 12px; word-break: break-word; }
+                    .bom-table th { background-color: #f2f2f2; }
+                    .bom-section { margin-top: 14px; }
+                    .bom-section:first-of-type { margin-top: 0; }
                     .print-calc-grid { display: flex; gap: 20px; align-items: flex-start; }
                     .print-calc-left { flex: 2; min-width: 0; }
                     .print-calc-right { flex: 1; min-width: 220px; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; background-color: #f9fafb; }
