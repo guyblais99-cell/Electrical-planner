@@ -1403,8 +1403,9 @@
         let projectName = "Untitled Project";
         let modalNameResolveToken = null;
         let lastProjectFileHandle = null;
-            const LOCAL_VERSION_URL = './version.json';
-            const VERSION_CHECK_URL = 'https://raw.githubusercontent.com/guyblais99-cell/Electrical-planner/main/version.json';
+        const LOCAL_VERSION_URL = './version.json';
+        const VERSION_CHECK_URL = 'https://raw.githubusercontent.com/guyblais99-cell/Electrical-planner/main/version.json';
+        const SW_SCRIPT_VERSION = '2026.08.04.3';
         const AUTOSAVE_DB_NAME = 'ElectricalPlannerAutosave';
         const AUTOSAVE_STORE_NAME = 'projects';
         const AUTOSAVE_STORAGE_KEY = 'electrical-planner.autosave.backup';
@@ -1416,6 +1417,7 @@
         let startupStatusHideTimer = null;
         let autosaveInFlight = false;
         let autosaveDirty = false;
+        let hasUnsavedChangesSinceSave = false;
         let placingSymbolType = null;
         let moveSymbolMode = false;
         let deleteSymbolMode = false;
@@ -2269,7 +2271,7 @@
             panelDisplay.style.display = 'block';
             renderBreakerPanel();
             checkPanelCapacityAndWarn();
-            scheduleAutosave();
+            markProjectDirty();
         });
 
         reconfigurePanelBtn.addEventListener('click', () => {
@@ -2710,7 +2712,8 @@
             updateButtonStates();
             drawGrid();
             renderLayers();
-            scheduleAutosave();
+            autosaveDirty = false;
+            hasUnsavedChangesSinceSave = false;
             showCustomModal({
                 type: 'info',
                 title: 'New project',
@@ -2979,7 +2982,7 @@
 
         function saveState(layer) {
             if (!layer) return;
-            scheduleAutosave();
+            markProjectDirty();
             layer.redoStack = [];
             layer.undoStack.push({
                 paths: JSON.parse(JSON.stringify(layer.paths)),
@@ -3080,7 +3083,7 @@
                     if (!isNaN(lengthInches) && dist > 0) {
                         globalScale = (lengthInches / 12) / dist;
                         getFlatLayers().forEach(l => l.scale = globalScale);
-                        scheduleAutosave();
+                        markProjectDirty();
                         drawGrid();
                     }
                     layer.calibrationPoints = [];
@@ -3409,7 +3412,7 @@
                 }
                 projectName = t;
                 updateProjectTitle();
-                scheduleAutosave();
+                markProjectDirty();
             });
         });
 
@@ -5456,6 +5459,11 @@
             }
         }
 
+        function markProjectDirty() {
+            hasUnsavedChangesSinceSave = true;
+            scheduleAutosave();
+        }
+
         function scheduleAutosave() {
             autosaveDirty = true;
         }
@@ -5561,6 +5569,8 @@
             }
             updateSymbolDefaultLabels();
             checkPanelCapacityAndWarn();
+            autosaveDirty = false;
+            hasUnsavedChangesSinceSave = false;
         }
 
         async function writeProjectFilesToDisk() {
@@ -5616,8 +5626,12 @@
             if (!trimmed) return false;
             projectName = trimmed;
             updateProjectTitle();
-            scheduleAutosave();
-            return writeProjectFilesToDisk();
+            const saved = await writeProjectFilesToDisk();
+            if (saved) {
+                autosaveDirty = false;
+                hasUnsavedChangesSinceSave = false;
+            }
+            return saved;
         }
 
         function loadProject(e) {
@@ -6588,7 +6602,7 @@
             notesTextarea.value = folder.notes || '';
             notesTextarea.addEventListener('input', () => { 
                 folder.notes = notesTextarea.value;
-                scheduleAutosave();
+                markProjectDirty();
                 autoResizeTextarea(notesTextarea);
             });
             notesDiv.appendChild(notesHeader);
@@ -6912,17 +6926,17 @@
                 const localVersion = await getLocalAppVersion();
                 const response = await fetch(`${VERSION_CHECK_URL}?t=${Date.now()}`, { cache: 'no-store' });
                 if (!response.ok) {
-                    showStartupStatus('warn', 'Update check unavailable', 1400);
+                    showStartupStatus('warn', 'Update check unavailable', 3000);
                     return;
                 }
                 const remoteInfo = await response.json();
                 const remoteVersion = remoteInfo && typeof remoteInfo.version === 'string' ? remoteInfo.version.trim() : '';
                 if (!remoteVersion || (localVersion && compareVersionParts(remoteVersion, localVersion) <= 0)) {
-                    showStartupStatus('ok', 'App is up to date', 1000);
+                    showStartupStatus('ok', `App is up to date (${localVersion || 'local'})`, 3000);
                     return;
                 }
 
-                showStartupStatus('warn', `Update available (${remoteVersion})`, 1500);
+                showStartupStatus('warn', `Update available (${remoteVersion})`, 3500);
 
                 showCustomModal({
                     type: 'confirm',
@@ -6933,14 +6947,14 @@
                 });
             } catch (error) {
                 console.warn('Update check failed.', error);
-                showStartupStatus('error', 'Update check failed', 1500);
+                showStartupStatus('error', 'Update check failed', 3000);
             }
         }
 
         async function registerAppShell() {
             if ('serviceWorker' in navigator) {
                 try {
-                    const registration = await navigator.serviceWorker.register('./sw.js');
+                    const registration = await navigator.serviceWorker.register(`./sw.js?v=${SW_SCRIPT_VERSION}`);
                     await registration.update();
                 } catch (error) {
                     console.warn('Service worker registration failed.', error);
@@ -6956,7 +6970,7 @@
             setupWorkspacePanZoom();
             startAutosaveLoop();
             window.addEventListener('beforeunload', (event) => {
-                if (!autosaveDirty && !autosaveInFlight) return;
+                if (!hasUnsavedChangesSinceSave && !autosaveInFlight) return;
                 event.preventDefault();
                 event.returnValue = '';
             });
