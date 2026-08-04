@@ -6165,16 +6165,19 @@
                     .bom-table th { background-color: #f2f2f2; }
                     .bom-section { margin-top: 14px; }
                     .bom-section:first-of-type { margin-top: 0; }
-                    .print-calc-grid { display: flex; gap: 20px; align-items: flex-start; }
-                    .print-calc-left { flex: 2; min-width: 0; }
-                    .print-calc-right { flex: 1; min-width: 220px; border: 1px solid #d1d5db; border-radius: 8px; padding: 12px; background-color: #f9fafb; }
-                    .print-calc-right h5 { margin: 0 0 8px 0; font-size: 14px; border-bottom: 1px solid #d1d5db; padding-bottom: 6px; }
-                    .print-calc-right p { margin: 0 0 6px 0; font-size: 12px; line-height: 1.4; }
+                    .print-calc-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(220px, 1fr); gap: 12px; align-items: start; }
+                    .print-calc-left { min-width: 0; }
+                    .print-calc-left > p:first-child { margin-top: 0; }
+                    .print-calc-right { min-width: 0; border: 1px solid #d1d5db; border-radius: 8px; padding: 10px; background-color: #f9fafb; }
+                    .print-calc-right h5 { margin: 0 0 6px 0; font-size: 13px; border-bottom: 1px solid #d1d5db; padding-bottom: 4px; }
+                    .print-calc-right p { margin: 0 0 4px 0; font-size: 11px; line-height: 1.3; }
+                    .print-summary-notes h4 { margin-top: 10px; }
+                    .print-summary-notes--empty { display: none; }
                 </style>
             `;
 
             const introPage = document.createElement('div');
-            introPage.className = 'print-flow-section';
+            introPage.className = 'print-page';
             introPage.innerHTML = `<h1>Project Report: ${projectName}</h1>`;
             reportContainer.appendChild(introPage);
 
@@ -6633,7 +6636,13 @@
 
                     const calculationHTML = `
                         <div class="print-calc-grid">
-                            <div class="print-calc-left">${leftCalcHTML}</div>
+                            <div class="print-calc-left">
+                                ${leftCalcHTML}
+                                <div class="print-summary-notes${item.notes && item.notes.trim() ? '' : ' print-summary-notes--empty'}">
+                                    <h4>Notes:</h4>
+                                    <pre>${item.notes || 'No notes.'}</pre>
+                                </div>
+                            </div>
                             <div class="print-calc-right">${panelInfoHTML}</div>
                         </div>`;
                     summaryDiv.innerHTML = `
@@ -6642,8 +6651,6 @@
                             <p><strong>Calculation Total (Red):</strong> ${folderTotals.redTotal.toFixed(2)} feet</p>
                             <p><strong>Total Wire Run (All):</strong> ${folderTotals.combinedTotal.toFixed(2)} feet</p>
                             ${calculationHTML}
-                            <h4>Notes:</h4>
-                            <pre>${item.notes || 'No notes.'}</pre>
                         </div>`;
                     summaryCollector.push(summaryDiv);
                     
