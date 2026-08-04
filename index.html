@@ -6275,7 +6275,7 @@
 
         async function exportReportToPdf(reportElement, filename, loadingDiv) {
             const jsPdfApi = window.jspdf && window.jspdf.jsPDF;
-            if (!jsPdfApi || typeof html2canvas !== 'function') {
+            if (!jsPdfApi || typeof html2pdf !== 'function') {
                 showCustomModal({
                     type: 'info',
                     title: 'PDF export unavailable',
@@ -6328,12 +6328,15 @@
                 document.body.appendChild(pageWrapper);
 
                 try {
-                    const canvas = await html2canvas(pageWrapper, {
-                        scale: 1.5,
-                        backgroundColor: '#ffffff',
-                        useCORS: true,
-                        logging: false
-                    });
+                    const canvasWorker = html2pdf().set({
+                        html2canvas: {
+                            scale: 1.5,
+                            backgroundColor: '#ffffff',
+                            useCORS: true,
+                            logging: false
+                        }
+                    }).from(pageWrapper).toCanvas();
+                    const canvas = await canvasWorker.get('canvas');
                     const imageData = canvas.toDataURL('image/jpeg', 0.92);
                     const availableWidth = pageWidth - (margin * 2);
                     const availableHeight = pageHeight - (margin * 2);
