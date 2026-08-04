@@ -1186,6 +1186,7 @@
                 <button type="button" id="modal-generic-confirm-btn">OK</button>
                 <button type="button" id="modal-generic-cancel-btn">Cancel</button>
             </div>
+            <button id="save-modal-secondary-btn" style="display:none; margin-bottom: 8px;">Save As</button>
             <button id="save-modal-value-btn">Save</button>
         </div>
     </div>
@@ -1642,6 +1643,7 @@
         const standardFuseSizes = [1, 2, 3, 5, 7.5, 10, 15, 20, 25, 30, 40, 50, 60, 70, 80, 100];
         
         let activeModalSaveHandler;
+        let activeModalSecondaryHandler;
 
         // --- Helper Function: Format Decimal Feet to Fractions (1/16th) ---
         function formatFractionFeet(decimalFeet) {
@@ -2220,6 +2222,13 @@
             if (activeModalSaveHandler) {
                  saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
                  activeModalSaveHandler = null;
+            }
+            if (activeModalSecondaryHandler) {
+                const secondaryBtn = document.getElementById('save-modal-secondary-btn');
+                if (secondaryBtn) {
+                    secondaryBtn.removeEventListener('click', activeModalSecondaryHandler);
+                }
+                activeModalSecondaryHandler = null;
             }
             
             // Clean up info modal if it was open
@@ -3000,6 +3009,15 @@
             symbolEditModal.style.width = '';
             const infoWrap = document.getElementById('info-message-container');
             if (infoWrap) infoWrap.style.display = 'none';
+            const secondaryBtn = document.getElementById('save-modal-secondary-btn');
+            if (secondaryBtn) {
+                secondaryBtn.style.display = 'none';
+                secondaryBtn.textContent = 'Save As';
+                if (activeModalSecondaryHandler) {
+                    secondaryBtn.removeEventListener('click', activeModalSecondaryHandler);
+                    activeModalSecondaryHandler = null;
+                }
+            }
 
             const panels = [
                 ['modal-new-project-actions', ['new-project-modal-save-btn', 'new-project-modal-discard-btn', 'new-project-modal-cancel-btn']],
@@ -3036,6 +3054,13 @@
             if (activeModalSaveHandler) {
                 saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
                 activeModalSaveHandler = null;
+            }
+            if (activeModalSecondaryHandler) {
+                const secondaryBtn = document.getElementById('save-modal-secondary-btn');
+                if (secondaryBtn) {
+                    secondaryBtn.removeEventListener('click', activeModalSecondaryHandler);
+                }
+                activeModalSecondaryHandler = null;
             }
             saveModalValueBtn.removeEventListener('click', saveSymbolEditHandler);
             resetModalAuxiliaryPanels();
@@ -3269,6 +3294,7 @@
                 symbolEditModal.style.width = '300px';
                 document.getElementById('modal-project-name-container').style.display = 'block';
                 const nameInp = document.getElementById('modal-project-name-input');
+                const secondaryBtn = document.getElementById('save-modal-secondary-btn');
                 nameInp.value = options.initialName ?? '';
                 focusElement = nameInp;
                 saveModalValueBtn.textContent = options.primaryLabel || 'OK';
@@ -3282,9 +3308,42 @@
                     saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
                     activeModalSaveHandler = null;
                     resetModalAuxiliaryPanels();
-                    if (r) r(raw);
+                    if (r) {
+                        if (options.returnActionObject) {
+                            r({ name: raw, action: options.primaryAction || 'primary' });
+                        } else {
+                            r(raw);
+                        }
+                    }
                 };
                 saveModalValueBtn.addEventListener('click', activeModalSaveHandler);
+
+                if (secondaryBtn && options.secondaryLabel) {
+                    secondaryBtn.style.display = '';
+                    secondaryBtn.textContent = options.secondaryLabel;
+                    activeModalSecondaryHandler = () => {
+                        const raw = nameInp.value.trim();
+                        if (!raw) return;
+                        const r = modalNameResolveToken;
+                        modalNameResolveToken = null;
+                        symbolEditModal.style.display = 'none';
+                        secondaryBtn.removeEventListener('click', activeModalSecondaryHandler);
+                        activeModalSecondaryHandler = null;
+                        if (activeModalSaveHandler) {
+                            saveModalValueBtn.removeEventListener('click', activeModalSaveHandler);
+                            activeModalSaveHandler = null;
+                        }
+                        resetModalAuxiliaryPanels();
+                        if (r) {
+                            if (options.returnActionObject) {
+                                r({ name: raw, action: options.secondaryAction || 'secondary' });
+                            } else {
+                                r(raw);
+                            }
+                        }
+                    };
+                    secondaryBtn.addEventListener('click', activeModalSecondaryHandler);
+                }
 
             } else if (type === 'confirm') {
                 symbolEditModal.style.width = '320px';
@@ -3388,8 +3447,24 @@
                     title: opts.title,
                     initialName: opts.initialName ?? '',
                     primaryLabel: opts.primaryLabel || 'OK',
+                    secondaryLabel: opts.secondaryLabel,
+                    primaryAction: opts.primaryAction,
+                    secondaryAction: opts.secondaryAction,
+                    returnActionObject: Boolean(opts.returnActionObject),
                     _nameResolve: resolve
                 });
+            });
+        }
+
+        function promptProjectSaveAction(opts) {
+            return promptProjectDisplayName({
+                title: opts.title,
+                initialName: opts.initialName,
+                primaryLabel: opts.primaryLabel,
+                secondaryLabel: opts.secondaryLabel,
+                primaryAction: opts.primaryAction,
+                secondaryAction: opts.secondaryAction,
+                returnActionObject: true
             });
         }
 
@@ -5522,6 +5597,37 @@
             }
         }
 
+        async function overwriteExistingProjectFile() {
+            if (!window.showOpenFilePicker) {
+                showCustomModal({
+                    type: 'info',
+                    title: 'Overwrite not supported',
+                    message: 'This browser cannot pick an existing file for overwrite. Use Save As instead.'
+                });
+                return false;
+            }
+
+            try {
+                const handles = await window.showOpenFilePicker({
+                    multiple: false,
+                    types: [{
+                        description: 'JSON Project Files',
+                        accept: { 'application/json': ['.json'] }
+                    }]
+                });
+                if (!handles || handles.length === 0) return false;
+                const fileHandle = handles[0];
+                await writeJsonToFileHandle(fileHandle, buildProjectSaveJson());
+                lastProjectFileHandle = fileHandle;
+                activateButton(saveProjectBtn);
+                return true;
+            } catch (error) {
+                if (error && error.name === 'AbortError') return false;
+                console.warn('Overwrite existing file failed.', error);
+                return false;
+            }
+        }
+
         function startAutosaveLoop() {
             if (autosaveIntervalId !== null) {
                 clearInterval(autosaveIntervalId);
@@ -5621,7 +5727,7 @@
             if (window.showSaveFilePicker) {
                 const desiredFilename = projectName + '.json';
                 try {
-                    let fileHandle = lastProjectFileHandle;
+                    let fileHandle = options.forcePicker ? null : lastProjectFileHandle;
                     if (!fileHandle || (!options.preferExistingHandle && fileHandle.name !== desiredFilename)) {
                         fileHandle = await window.showSaveFilePicker({
                             suggestedName: desiredFilename,
@@ -5655,26 +5761,40 @@
         }
 
         async function saveProject() {
-            if (lastProjectFileHandle) {
-                const savedExisting = await writeProjectFilesToDisk({ preferExistingHandle: true });
-                if (savedExisting) {
-                    autosaveDirty = false;
-                    hasUnsavedChangesSinceSave = false;
-                    return true;
+            const saveChoice = await promptProjectSaveAction({
+                title: 'Save project',
+                initialName: projectName === 'Untitled Project' ? '' : projectName,
+                primaryLabel: lastProjectFileHandle ? 'Overwrite' : 'Overwrite Existing',
+                secondaryLabel: 'Save As',
+                primaryAction: 'overwrite',
+                secondaryAction: 'saveAs'
+            });
+            if (saveChoice == null) return false;
+
+            const trimmed = String(saveChoice.name || '').trim();
+            if (!trimmed) {
+                showCustomModal({
+                    type: 'info',
+                    title: 'Name required',
+                    message: 'Please enter a project name.'
+                });
+                return false;
+            }
+            projectName = trimmed;
+            updateProjectTitle();
+
+            let saved = false;
+            if (saveChoice.action === 'saveAs') {
+                saved = await writeProjectFilesToDisk({ forcePicker: true });
+            } else if (lastProjectFileHandle) {
+                saved = await writeProjectFilesToDisk({ preferExistingHandle: true });
+            } else {
+                saved = await overwriteExistingProjectFile();
+                if (!saved) {
+                    saved = await writeProjectFilesToDisk({ forcePicker: true });
                 }
             }
 
-            const entered = await promptProjectDisplayName({
-                title: 'Save project',
-                primaryLabel: 'Continue',
-                initialName: projectName === 'Untitled Project' ? '' : projectName
-            });
-            if (entered == null) return false;
-            const trimmed = entered.trim();
-            if (!trimmed) return false;
-            projectName = trimmed;
-            updateProjectTitle();
-            const saved = await writeProjectFilesToDisk();
             if (saved) {
                 autosaveDirty = false;
                 hasUnsavedChangesSinceSave = false;
