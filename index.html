@@ -983,6 +983,37 @@
             background: rgba(185, 28, 28, 0.92);
         }
 
+        #startup-status {
+            position: fixed;
+            top: 14px;
+            left: 50%;
+            transform: translate(-50%, -8px);
+            z-index: 10001;
+            padding: 8px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #ffffff;
+            background: rgba(31, 41, 55, 0.92);
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.22);
+            opacity: 0;
+            transition: opacity 0.2s ease, transform 0.2s ease;
+            pointer-events: none;
+        }
+        #startup-status.visible {
+            opacity: 1;
+            transform: translate(-50%, 0);
+        }
+        #startup-status.ok {
+            background: rgba(5, 150, 105, 0.92);
+        }
+        #startup-status.warn {
+            background: rgba(202, 138, 4, 0.92);
+        }
+        #startup-status.error {
+            background: rgba(185, 28, 28, 0.92);
+        }
+
     </style>
 </head>
 <body>
@@ -1281,6 +1312,7 @@
     </div>
 
     <div id="autosave-indicator" aria-live="polite">Saving...</div>
+    <div id="startup-status" aria-live="polite">Checking for updates...</div>
 
     <script>
         const workspace = document.getElementById('workspace');
@@ -1352,6 +1384,7 @@
         const toolbarsContainer = document.getElementById('toolbars-container');
         const activeFolderDisplay = document.getElementById('active-folder-display');
         const autosaveIndicator = document.getElementById('autosave-indicator');
+        const startupStatus = document.getElementById('startup-status');
 
         // Batch setup modal elements
         const batchSetupBtn = document.getElementById('batch-setup-btn');
@@ -1380,6 +1413,7 @@
         let autosaveDbPromise = null;
         let autosaveIntervalId = null;
         let autosaveStatusHideTimer = null;
+        let startupStatusHideTimer = null;
         let autosaveInFlight = false;
         let autosaveDirty = false;
         let placingSymbolType = null;
@@ -5403,6 +5437,23 @@
             }
         }
 
+        function showStartupStatus(kind, message, autoHideMs = 0) {
+            if (!startupStatus) return;
+            startupStatus.textContent = message;
+            startupStatus.classList.remove('ok', 'warn', 'error');
+            if (kind) startupStatus.classList.add(kind);
+            startupStatus.classList.add('visible');
+            if (startupStatusHideTimer) {
+                clearTimeout(startupStatusHideTimer);
+                startupStatusHideTimer = null;
+            }
+            if (autoHideMs > 0) {
+                startupStatusHideTimer = setTimeout(() => {
+                    startupStatus.classList.remove('visible');
+                }, autoHideMs);
+            }
+        }
+
         function scheduleAutosave() {
             autosaveDirty = true;
         }
@@ -6841,12 +6892,21 @@
         }
 
         async function checkForAppUpdate() {
+            showStartupStatus('', 'Checking for updates...');
             try {
                 const response = await fetch(`${VERSION_CHECK_URL}?t=${Date.now()}`, { cache: 'no-store' });
-                if (!response.ok) return;
+                if (!response.ok) {
+                    showStartupStatus('warn', 'Update check unavailable', 1400);
+                    return;
+                }
                 const remoteInfo = await response.json();
                 const remoteVersion = remoteInfo && typeof remoteInfo.version === 'string' ? remoteInfo.version.trim() : '';
-                if (!remoteVersion || compareVersionParts(remoteVersion, APP_VERSION) <= 0) return;
+                if (!remoteVersion || compareVersionParts(remoteVersion, APP_VERSION) <= 0) {
+                    showStartupStatus('ok', 'App is up to date', 1000);
+                    return;
+                }
+
+                showStartupStatus('warn', `Update available (${remoteVersion})`, 1500);
 
                 showCustomModal({
                     type: 'confirm',
@@ -6857,6 +6917,7 @@
                 });
             } catch (error) {
                 console.warn('Update check failed.', error);
+                showStartupStatus('error', 'Update check failed', 1500);
             }
         }
 
@@ -6877,10 +6938,18 @@
             updateProjectTitle();
             setupWorkspacePanZoom();
             startAutosaveLoop();
+            window.addEventListener('beforeunload', (event) => {
+                if (!autosaveDirty && !autosaveInFlight) return;
+                event.preventDefault();
+                event.returnValue = '';
+            });
             document.addEventListener('visibilitychange', () => {
                 if (document.hidden) {
                     void flushAutosave(false);
                 }
+            });
+            window.addEventListener('pagehide', () => {
+                void flushAutosave(false);
             });
             void checkForAppUpdate();
         }
