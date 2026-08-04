@@ -75,11 +75,14 @@
             margin: 8px 0;
             background: #f8fafc;
             border-radius: 8px;
-            cursor: move;
+            cursor: default;
             display: flex;
             flex-direction: column;
             align-items: stretch;
             transition: background 0.2s, transform 0.2s;
+        }
+        #layers-list li.draggable-item {
+            cursor: move;
         }
         .layer-info {
             display: flex;
@@ -6688,6 +6691,9 @@
                 const li = document.createElement('li');
                 const itemCanDrag = item.type === 'layer';
                 li.draggable = itemCanDrag;
+                if (itemCanDrag) {
+                    li.classList.add('draggable-item');
+                }
                 li.dataset.id = item.id;
                 if ((item.type === 'layer' && item === activeLayer) || (item.type ==='folder' && item === dataPanelItem)) { 
                     li.classList.add('active'); 
