@@ -4,6 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Layered Image Editor with Per-Layer Drawing</title>
+        <meta name="theme-color" content="#0f172a">
+        <meta name="apple-mobile-web-app-capable" content="yes">
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+        <link rel="manifest" href="./manifest.webmanifest">
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     <style>
@@ -1332,6 +1336,8 @@
         let projectName = "Untitled Project";
         let modalNameResolveToken = null;
         let lastProjectFileHandle = null;
+            const APP_VERSION = '2026.08.04.1';
+            const VERSION_CHECK_URL = 'https://raw.githubusercontent.com/guyblais99-cell/Electrical-planner/main/version.json';
         const AUTOSAVE_DB_NAME = 'ElectricalPlannerAutosave';
         const AUTOSAVE_STORE_NAME = 'projects';
         const AUTOSAVE_STORAGE_KEY = 'electrical-planner.autosave.backup';
@@ -5173,9 +5179,9 @@
             }
         }
 
-        function fromObject(obj) {
-            return new Promise((resolve, reject) => {
-                if (obj.type === 'layer') {
+        async function fromObject(obj) {
+            if (obj.type === 'layer') {
+                return await new Promise((resolve, reject) => {
                     const imageCanvas = document.createElement('canvas');
                     imageCanvas.width = WIDTH; imageCanvas.height = HEIGHT;
                     const img = new Image();
@@ -5213,12 +5219,18 @@
                     drawingImg.onload = () => { drawDataUrlOntoCanvas(drawingImg, drawingCanvas); drawingLoaded = true; checkDone(); };
                     img.onerror = reject; drawingImg.onerror = reject;
                     img.src = obj.imageData; drawingImg.src = obj.drawingData;
-                } else if (obj.type === 'folder') {
-                    Promise.all(obj.children.map(fromObject)).then(resolvedChildren => {
-                        resolve({ type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [], excludeFromPanel: obj.excludeFromPanel || false, singleRunLengthOnly: obj.singleRunLengthOnly || false });
-                    }).catch(reject);
+                });
+            }
+
+            if (obj.type === 'folder') {
+                const resolvedChildren = [];
+                for (const child of obj.children || []) {
+                    resolvedChildren.push(await fromObject(child));
                 }
-            });
+                return { type: 'folder', id: obj.id, name: obj.name, children: resolvedChildren, selected: false, expanded: true, notes: obj.notes || '', wireGaugeData: obj.wireGaugeData, addedLoadFolders: obj.addedLoadFolders || [], excludeFromPanel: obj.excludeFromPanel || false, singleRunLengthOnly: obj.singleRunLengthOnly || false };
+            }
+
+            return null;
         }
 
         function buildProjectSaveObject() {
@@ -5236,6 +5248,25 @@
             if (Array.isArray(projectData.projectItems) && projectData.projectItems.length > 0) return true;
             if (projectData.breakerPanel) return true;
             return Boolean(projectData.projectName && projectData.projectName !== 'Untitled Project');
+        }
+
+        function disposeCurrentProjectState() {
+            if (canvasStack) {
+                Array.from(canvasStack.querySelectorAll('canvas')).forEach(c => {
+                    if (c !== gridCanvas) c.remove();
+                });
+            }
+            clearWorkspaceViews();
+            items = [];
+            activeFolder = null;
+            activeLayer = null;
+            dataPanelItem = null;
+            currentPath = null;
+            selectedPoint = null;
+            selectedSymbol = null;
+            currentMeasurement = null;
+            highlightedGuidelines = [];
+            workspace.classList.remove('placing-symbol-mode', 'move-symbols-mode', 'delete-symbols-mode');
         }
 
         function openAutosaveDatabase() {
@@ -5352,13 +5383,12 @@
                 breakerPanelConfig = null;
             }
 
-            if (canvasStack) {
-                Array.from(canvasStack.querySelectorAll('canvas')).forEach(c => {
-                    if (c !== gridCanvas) c.remove();
-                });
+            disposeCurrentProjectState();
+            await new Promise(requestAnimationFrame);
+            items = [];
+            for (const item of projectItems || []) {
+                items.push(await fromObject(item));
             }
-            clearWorkspaceViews();
-            items = await Promise.all(projectItems.map(fromObject));
 
             const allLoadedLayers = getFlatLayers(items);
             allLoadedLayers.forEach(layer => {
@@ -6710,12 +6740,56 @@
             if (existingDisplay) workspace.removeChild(existingDisplay);
             guidelineToolState.isTyping = false;
         }
+        function compareVersionParts(leftVersion, rightVersion) {
+            const leftParts = String(leftVersion).split('.').map(part => parseInt(part, 10) || 0);
+            const rightParts = String(rightVersion).split('.').map(part => parseInt(part, 10) || 0);
+            const length = Math.max(leftParts.length, rightParts.length);
+            for (let index = 0; index < length; index++) {
+                const leftPart = leftParts[index] || 0;
+                const rightPart = rightParts[index] || 0;
+                if (leftPart > rightPart) return 1;
+                if (leftPart < rightPart) return -1;
+            }
+            return 0;
+        }
+
+        async function checkForAppUpdate() {
+            try {
+                const response = await fetch(`${VERSION_CHECK_URL}?t=${Date.now()}`, { cache: 'no-store' });
+                if (!response.ok) return;
+                const remoteInfo = await response.json();
+                const remoteVersion = remoteInfo && typeof remoteInfo.version === 'string' ? remoteInfo.version.trim() : '';
+                if (!remoteVersion || compareVersionParts(remoteVersion, APP_VERSION) <= 0) return;
+
+                showCustomModal({
+                    type: 'confirm',
+                    title: 'Update available',
+                    message: `A newer version (${remoteVersion}) is available. Reload now to update?`,
+                    confirmLabel: 'Reload',
+                    onConfirm: () => window.location.reload()
+                });
+            } catch (error) {
+                console.warn('Update check failed.', error);
+            }
+        }
+
+        async function registerAppShell() {
+            if ('serviceWorker' in navigator) {
+                try {
+                    await navigator.serviceWorker.register('./sw.js');
+                } catch (error) {
+                    console.warn('Service worker registration failed.', error);
+                }
+            }
+        }
 
         async function initializeApp() {
+            await registerAppShell();
             await restoreAutosavedProject();
             updateSymbolDefaultLabels();
             updateProjectTitle();
             setupWorkspacePanZoom();
+            void checkForAppUpdate();
         }
 
         void initializeApp();
